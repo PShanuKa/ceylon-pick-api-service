@@ -1,5 +1,7 @@
 package lk.ceylonpick.shared.web;
 
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 
 /**
@@ -24,12 +26,24 @@ public class ApiException extends RuntimeException {
     private final String code;
     /** Substituted into the translated message, so numbers survive translation. */
     private final transient Object[] args;
+    /**
+     * Machine-readable context the client can act on rather than parse out of
+     * the message — the allowed targets of a refused order transition, say
+     * (FR-ORD-11).
+     */
+    private final transient Map<String, Object> details;
 
     public ApiException(HttpStatus status, String code, String message, Object... args) {
+        this(status, code, message, null, args);
+    }
+
+    public ApiException(HttpStatus status, String code, String message,
+                        Map<String, Object> details, Object... args) {
         super(message);
         this.status = status;
         this.code = code;
         this.args = args == null ? NO_ARGS : args;
+        this.details = details;
     }
 
     public HttpStatus getStatus() {
@@ -42,6 +56,15 @@ public class ApiException extends RuntimeException {
 
     public Object[] getArgs() {
         return args.clone();
+    }
+
+    public Map<String, Object> getDetails() {
+        return details;
+    }
+
+    /** Returns a copy carrying context for the client. */
+    public ApiException withDetails(Map<String, Object> details) {
+        return new ApiException(status, code, getMessage(), details, args);
     }
 
     public static ApiException badRequest(String code, String message, Object... args) {

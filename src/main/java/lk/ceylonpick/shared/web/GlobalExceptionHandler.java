@@ -36,8 +36,10 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ApiResponse<Void>> handleApi(ApiException e) {
         String message = messages.forErrorCode(e.getCode(), e.getMessage(), e.getArgs());
-        return ResponseEntity.status(e.getStatus())
-                .body(ApiResponse.failed(ApiError.of(e.getCode(), message)));
+        ApiError error = e.getDetails() == null
+                ? ApiError.of(e.getCode(), message)
+                : ApiError.withDetails(e.getCode(), message, e.getDetails());
+        return ResponseEntity.status(e.getStatus()).body(ApiResponse.failed(error));
     }
 
     /** FR-AUTH-03: authenticated but not entitled is a 403, never a 401. */

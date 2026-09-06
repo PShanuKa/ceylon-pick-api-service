@@ -18,6 +18,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 import lk.ceylonpick.catalog.api.ProductStatus;
 import lk.ceylonpick.catalog.domain.Product;
@@ -61,10 +62,13 @@ class StockServiceConcurrencyTest {
     private StockReservationRepository reservations;
     @Autowired
     private Clock clock;
+    @Autowired
+    private JdbcTemplate jdbc;
 
     private String vendorId;
     private String productId;
     private String variantId;
+    private String orderId;
 
     @BeforeEach
     void createFixture() {
@@ -97,6 +101,29 @@ class StockServiceConcurrencyTest {
         variant.setSku("STOCK-TEST-" + variant.getId());
         variant.setStockQty(STOCK);
         variantId = variants.save(variant).getId();
+
+        orderId = insertOrder();
+    }
+
+    /**
+     * A real order row, because V3 gave {@code stock_reservation.order_id} a
+     * foreign key. Written as SQL rather than through a repository because the
+     * orders module has no entity yet; swap this for the entity when it lands.
+     */
+    private String insertOrder() {
+        String id = Ids.newId();
+        jdbc.update("""
+                insert into "order" (id, number, vendor_id, buyer_phone, buyer_name, address,
+                                     district, pay_method, status, subtotal, shipping_fee, total)
+                values (?, ?, ?, '+94770000002', 'Stock Test Buyer', '{}'::jsonb,
+                        'Colombo', 'COD', 'PLACED', 100.00, 0.00, 100.00)
+                """, id, "TEST-" + id, vendorId);
+        return id;
+    }
+
+    /** Each buyer in the concurrency test needs an order of their own. */
+    private String newOrder() {
+        return insertOrder();
     }
 
     @AfterEach
@@ -105,6 +132,7 @@ class StockServiceConcurrencyTest {
                 .filter(r -> r.getVariantId().equals(variantId)).toList());
         variants.deleteById(variantId);
         products.deleteById(productId);
+        jdbc.update("delete from \"order\" where vendor_id = ?", vendorId);
         vendors.deleteById(vendorId);
     }
 
@@ -117,11 +145,11 @@ class StockServiceConcurrencyTest {
 
         try (ExecutorService pool = Executors.newFixedThreadPool(CONCURRENT_BUYERS)) {
             for (int i = 0; i < CONCURRENT_BUYERS; i++) {
-                String orderId = "TEST-ORDER-" + Ids.newId();
+                String buyerOrderId = newOrder();
                 pool.submit(() -> {
                     try {
                         startTogether.await();
-                        stock.reserve(orderId, variantId, 1, Duration.ofMinutes(15));
+                        stock.reserve(buyerOrderId, variantId, 1, Duration.ofMinutes(15));
                         reserved.incrementAndGet();
                     } catch (Exception e) {
                         refused.incrementAndGet();
@@ -146,7 +174,6 @@ class StockServiceConcurrencyTest {
 
     @Test
     void releasingPutsTheUnitsBack() {
-        String orderId = "TEST-ORDER-" + Ids.newId();
         stock.reserve(orderId, variantId, 2, Duration.ofMinutes(15));
         assertThat(variants.findById(variantId).orElseThrow().availableQty()).isEqualTo(STOCK - 2);
 
@@ -159,7 +186,6 @@ class StockServiceConcurrencyTest {
 
     @Test
     void consumingTakesTheUnitsOutOfStockForGood() {
-        String orderId = "TEST-ORDER-" + Ids.newId();
         stock.reserve(orderId, variantId, 2, Duration.ofMinutes(15));
 
         stock.consume(orderId);
@@ -172,7 +198,6 @@ class StockServiceConcurrencyTest {
     /** A second release must not hand the same units back twice. */
     @Test
     void releaseIsIdempotentPerOrder() {
-        String orderId = "TEST-ORDER-" + Ids.newId();
         stock.reserve(orderId, variantId, 3, Duration.ofMinutes(15));
 
         assertThat(stock.release(orderId)).isEqualTo(1);
@@ -182,7 +207,6 @@ class StockServiceConcurrencyTest {
 
     @Test
     void expiredReservationsAreSweptBack() {
-        String orderId = "TEST-ORDER-" + Ids.newId();
         var reservation = stock.reserve(orderId, variantId, 2, Duration.ofMinutes(15));
         reservation.setExpiresAt(clock.instant().minusSeconds(1));
         reservations.save(reservation);
@@ -193,7 +217,6 @@ class StockServiceConcurrencyTest {
 
     @Test
     void reservingMoreThanStockIsRefusedOutright() {
-        String orderId = "TEST-ORDER-" + Ids.newId();
         org.assertj.core.api.Assertions
                 .assertThatThrownBy(() -> stock.reserve(orderId, variantId, STOCK + 1, Duration.ofMinutes(15)))
                 .hasMessageContaining("no longer available");
@@ -203,7 +226,7 @@ class StockServiceConcurrencyTest {
 
     @Test
     void variantsListStaysConsistentAfterMixedTraffic() {
-        List<String> orders = List.of("A", "B", "C").stream().map(k -> "TEST-" + k + Ids.newId()).toList();
+        List<String> orders = List.of(newOrder(), newOrder(), newOrder());
         stock.reserve(orders.get(0), variantId, 2, Duration.ofMinutes(15));
         stock.reserve(orders.get(1), variantId, 2, Duration.ofMinutes(15));
         stock.consume(orders.get(0));
