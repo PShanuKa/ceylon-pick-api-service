@@ -12,8 +12,16 @@ spring:
       idle-timeout: 600000
       max-lifetime: 1800000
 
+  # Flyway owns the schema in every environment, so JPA only validates.
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: false
+
   jpa:
     open-in-view: false
+    hibernate:
+      ddl-auto: validate
     properties:
       hibernate:
         format_sql: true
@@ -31,3 +39,49 @@ management:
   endpoint:
     health:
       show-details: when-authorized
+
+ceylonpick:
+  auth:
+    jwt:
+      issuer: ceylonpick
+      # HS256; must be at least 32 bytes. Overridden per environment.
+      secret: ${JWT_SECRET}
+      # The access token carries only the user id. Everything used for an
+      # authorization decision is read live (cache -> DB) on each request,
+      # so role and status changes take effect immediately.
+      access-ttl: 15m
+    cookie:
+      access-name: cp_at
+      refresh-name: cp_rt
+      path: /
+      secure: ${COOKIE_SECURE:true}
+      same-site: Lax
+    # FR-AUTH-01 mandates a 30-day buyer session. The rest are unspecified
+    # by the SRS; staff get shorter sessions, admin shortest.
+    refresh-ttl:
+      buyer: 30d
+      creator: 7d
+      vendor: 7d
+      admin: 1d
+    lockout:
+      max-failed-attempts: 5      # FR-AUTH-02
+      duration: 15m               # FR-AUTH-02
+    password:
+      min-length: 10              # FR-AUTH-02
+    otp:
+      length: 6                   # BR-07
+      ttl: 10m                    # BR-07
+      max-attempts: 3             # BR-07
+      max-resends: 3              # BR-07
+      per-phone-per-hour: 3       # FR-NOT-01 / IF-04
+      # Echo the code in the API response instead of sending it. Never in uat/prod.
+      expose-code: false
+    reset:
+      password-token-ttl: 1h
+      email-token-ttl: 24h
+    cache:
+      # In-process only (ADR-2: no Redis until 2+ instances). Explicit
+      # eviction on every write to role/status is what keeps this correct;
+      # the TTL is a safety net for anything that slips through.
+      ttl: 5m
+      max-size: 10000

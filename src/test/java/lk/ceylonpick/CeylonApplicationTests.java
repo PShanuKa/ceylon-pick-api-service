@@ -1,4 +1,4 @@
-package com.ceylon_pick.ceylon;
+package lk.ceylonpick;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;

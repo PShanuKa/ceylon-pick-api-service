@@ -8,13 +8,28 @@ spring:
       minimum-idle: 1
 
   jpa:
-    hibernate:
-      ddl-auto: update
     show-sql: true
 
 logging:
   level:
     root: INFO
-    com.ceylon_pick.ceylon: DEBUG
+    lk.ceylonpick: DEBUG
     org.hibernate.SQL: DEBUG
     org.hibernate.orm.jdbc.bind: TRACE
+
+ceylonpick:
+  auth:
+    jwt:
+      # Dev-only key. uat/prod require JWT_SECRET from the environment.
+      secret: ${JWT_SECRET:dev-only-insecure-signing-key-change-me-32b+}
+    cookie:
+      secure: false             # plain http on localhost
+    otp:
+      expose-code: true         # no SMS provider wired yet; return the code so flows are testable
+    bootstrap:
+      # Applied only when no admin exists yet, so this is a no-op after the first start.
+      enabled: true
+      email: ${BOOTSTRAP_ADMIN_EMAIL:owner@ceylonpick.lk}
+      password: ${BOOTSTRAP_ADMIN_PASSWORD:ChangeMeNow123!}
+      phone: ${BOOTSTRAP_ADMIN_PHONE:0770000000}
+      full_name: Founder

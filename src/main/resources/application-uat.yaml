@@ -8,11 +8,18 @@ spring:
       minimum-idle: 2
 
   jpa:
-    hibernate:
-      ddl-auto: validate
     show-sql: false
 
 logging:
   level:
     root: INFO
-    com.ceylon_pick.ceylon: DEBUG
+    lk.ceylonpick: DEBUG
+
+ceylonpick:
+  auth:
+    jwt:
+      secret: ${JWT_SECRET}     # required; startup fails without it
+    cookie:
+      secure: true
+    otp:
+      expose-code: false
