@@ -13,7 +13,7 @@ class AuthUserTest {
     private static final Instant INVALIDATED_AT = Instant.parse("2026-09-06T10:00:00Z");
 
     private static AuthUser user(Role role, AdminRole adminRole) {
-        return new AuthUser("u1", role, adminRole, UserStatus.ACTIVE, INVALIDATED_AT, null, null);
+        return new AuthUser("u1", role, adminRole, UserStatus.ACTIVE, INVALIDATED_AT);
     }
 
     @Test

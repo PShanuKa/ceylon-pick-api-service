@@ -1,4 +1,4 @@
-package lk.ceylonpick.auth.service;
+package lk.ceylonpick.shared.audit;
 
 import java.time.Clock;
 import java.util.Map;
@@ -7,16 +7,15 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
-import lk.ceylonpick.auth.domain.AuditLogEntry;
-import lk.ceylonpick.auth.repo.AuditLogRepository;
 import lk.ceylonpick.shared.Hashes;
 
 /**
- * NFR-07: admin actions and settings changes logged with actor and time.
+ * Writes the audit trail required by NFR-07.
  *
- * <p>Every write runs in its own transaction. A failed sign-in ends by throwing,
- * which rolls the caller back — an audit row written in that transaction would
- * disappear with it, and the failures are exactly the ones worth keeping.
+ * <p>Every write runs in its own transaction. A failed sign-in, a refused
+ * transition or a rejected setting change all end by throwing, which rolls the
+ * caller back — an audit row written in that transaction would disappear with
+ * it, and those are exactly the events worth keeping.
  */
 @Service
 public class AuditService {

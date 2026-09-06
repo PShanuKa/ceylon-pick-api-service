@@ -44,9 +44,7 @@ public final class AuthResponses {
             String userId,
             Role role,
             AdminRole adminRole,
-            UserStatus status,
-            String vendorId,
-            String creatorId) {
+            UserStatus status) {
     }
 
     public record AdminSummary(String userId, String fullName, AdminRole adminRole) {

@@ -70,15 +70,11 @@ public class AuthUserService {
                 ? adminProfiles.findById(userId).orElse(null)
                 : null;
 
-        // vendorId and creatorId stay null until those modules' migrations add
-        // their profile tables; ownership checks (FR-AUTH-03) start using them then.
         return new AuthUser(
                 user.getId(),
                 user.getRole(),
                 adminProfile == null ? null : adminProfile.getAdminRole(),
                 user.getStatus(),
-                user.getSessionsInvalidatedAt(),
-                null,
-                null);
+                user.getSessionsInvalidatedAt());
     }
 }

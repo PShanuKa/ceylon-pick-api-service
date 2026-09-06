@@ -19,7 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import lk.ceylonpick.auth.AuthProperties;
 import lk.ceylonpick.auth.domain.AppUser;
-import lk.ceylonpick.auth.domain.AuditLogEntry;
+import lk.ceylonpick.shared.audit.AuditService;
 import lk.ceylonpick.auth.domain.RefreshToken;
 import lk.ceylonpick.auth.repo.AppUserRepository;
 import lk.ceylonpick.auth.repo.RefreshTokenRepository;
@@ -152,7 +152,7 @@ public class TokenService {
             // Treat the whole family as compromised. This commits separately,
             // because the exception below rolls this transaction back.
             revoker.revokeFamily(presented.getFamilyId(), RefreshToken.REASON_REUSE_DETECTED);
-            audit.record(AuditLogEntry.REFRESH_REUSE_DETECTED, presented.getUserId(), null,
+            audit.record(AuthAudit.REFRESH_REUSE_DETECTED, presented.getUserId(), null,
                     "refresh_token", presented.getId(), ip);
             log.warn("Refresh token reuse detected for user {}; family {} revoked",
                     presented.getUserId(), presented.getFamilyId());

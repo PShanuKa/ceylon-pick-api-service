@@ -21,6 +21,12 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
  * and {@code locked_until} counters. Credentials do not belong in a long-lived
  * heap object, and the lockout counters must be read and written
  * transactionally or the 5-attempt limit can be raced past.
+ *
+ * <p>Also absent: the vendor and creator profile ids. Carrying them would mean
+ * auth reading those modules' tables, and they already depend on auth — a
+ * cycle. Each module resolves its own profile from {@link #userId()} instead,
+ * which is also where "does this person own this vendor" (FR-AUTH-03) is
+ * properly answered.
  */
 public record AuthUser(
         String userId,
@@ -28,10 +34,7 @@ public record AuthUser(
         AdminRole adminRole,
         UserStatus status,
         /** Access tokens issued before this instant are rejected — see logout-all. */
-        Instant sessionsInvalidatedAt,
-        /** Profile ids for ownership checks (FR-AUTH-03); null until that profile exists. */
-        String vendorId,
-        String creatorId) {
+        Instant sessionsInvalidatedAt) {
 
     public Collection<GrantedAuthority> authorities() {
         List<GrantedAuthority> list = new ArrayList<>(2);

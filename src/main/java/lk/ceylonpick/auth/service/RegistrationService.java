@@ -13,7 +13,7 @@ import org.springframework.transaction.annotation.Transactional;
 import lk.ceylonpick.auth.AuthProperties;
 import lk.ceylonpick.auth.api.Role;
 import lk.ceylonpick.auth.domain.AppUser;
-import lk.ceylonpick.auth.domain.AuditLogEntry;
+import lk.ceylonpick.shared.audit.AuditService;
 import lk.ceylonpick.auth.domain.BuyerProfile;
 import lk.ceylonpick.auth.domain.EmailVerificationToken;
 import lk.ceylonpick.auth.repo.AppUserRepository;
@@ -127,7 +127,7 @@ public class RegistrationService {
         });
 
         issueEmailVerification(user, now);
-        audit.record(AuditLogEntry.USER_REGISTERED, user.getId(), Role.BUYER.name(),
+        audit.record(AuthAudit.USER_REGISTERED, user.getId(), Role.BUYER.name(),
                 "app_user", user.getId(), ip);
         return user;
     }
@@ -164,7 +164,7 @@ public class RegistrationService {
         verificationTokens.save(token);
         authUsers.evict(user.getId());
 
-        audit.record(AuditLogEntry.EMAIL_VERIFIED, user.getId(), user.getRole().name(),
+        audit.record(AuthAudit.EMAIL_VERIFIED, user.getId(), user.getRole().name(),
                 "app_user", user.getId(), ip);
     }
 }

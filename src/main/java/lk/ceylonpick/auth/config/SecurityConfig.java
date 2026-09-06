@@ -56,7 +56,10 @@ public class SecurityConfig {
             "/api/v1/auth/register",
             "/api/v1/auth/email/verify",
             "/api/v1/auth/password/forgot",
-            "/api/v1/auth/password/reset"
+            "/api/v1/auth/password/reset",
+            // Applications are made by visitors with no account (FR-VEN-01, FR-CRE-01)
+            "/api/v1/public/vendors/apply",
+            "/api/v1/public/creators/apply"
     };
 
     @Bean
@@ -93,6 +96,8 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.POST, PUBLIC_POST).permitAll()
                         .requestMatchers("/webhooks/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/vendor/**").hasRole("VENDOR")
+                        .requestMatchers("/api/v1/creator/**").hasRole("CREATOR")
                         .anyRequest().authenticated())
                 // These fire inside the filter chain, before any controller advice
                 // could see them, so they build the envelope themselves.

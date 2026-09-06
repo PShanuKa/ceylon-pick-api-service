@@ -10,7 +10,7 @@ import org.springframework.transaction.annotation.Transactional;
 import lk.ceylonpick.auth.AuthProperties;
 import lk.ceylonpick.auth.api.Role;
 import lk.ceylonpick.auth.domain.AppUser;
-import lk.ceylonpick.auth.domain.AuditLogEntry;
+import lk.ceylonpick.shared.audit.AuditService;
 import lk.ceylonpick.auth.domain.BuyerProfile;
 import lk.ceylonpick.auth.domain.OtpChallenge;
 import lk.ceylonpick.auth.repo.AppUserRepository;
@@ -76,7 +76,7 @@ public class AuthService {
         // Same failure for an unknown account and a wrong password, so the API
         // cannot be used to test whether an address is registered.
         if (found.isEmpty() || !found.get().hasPassword()) {
-            audit.record(AuditLogEntry.LOGIN_FAILED, null, null, "app_user", null, ip);
+            audit.record(AuthAudit.LOGIN_FAILED, null, null, "app_user", null, ip);
             throw ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect");
         }
         AppUser user = found.get();
@@ -84,7 +84,7 @@ public class AuthService {
 
         if (!passwordEncoder.matches(password, user.getPasswordHash())) {
             accounts.recordFailedLogin(user.getId(), ip);
-            audit.record(AuditLogEntry.LOGIN_FAILED, user.getId(), user.getRole().name(),
+            audit.record(AuthAudit.LOGIN_FAILED, user.getId(), user.getRole().name(),
                     "app_user", user.getId(), ip);
             throw ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect");
         }
@@ -189,7 +189,7 @@ public class AuthService {
         profile.setCreatedAt(now);
         buyerProfiles.save(profile);
 
-        audit.record(AuditLogEntry.USER_REGISTERED, user.getId(), Role.BUYER.name(),
+        audit.record(AuthAudit.USER_REGISTERED, user.getId(), Role.BUYER.name(),
                 "app_user", user.getId(), null);
         return user;
     }
@@ -232,13 +232,13 @@ public class AuthService {
     @Transactional
     public void logout(String rawRefreshToken, String userId, String ip) {
         tokens.endSession(rawRefreshToken);
-        audit.record(AuditLogEntry.LOGOUT, userId, null, "app_user", userId, ip);
+        audit.record(AuthAudit.LOGOUT, userId, null, "app_user", userId, ip);
     }
 
     private LoginOutcome.SessionIssued completeLogin(AppUser user, String userAgent, String ip) {
         accounts.recordSuccessfulLogin(user);
         IssuedSession session = tokens.startSession(user, userAgent, ip);
-        audit.record(AuditLogEntry.LOGIN_SUCCEEDED, user.getId(), user.getRole().name(),
+        audit.record(AuthAudit.LOGIN_SUCCEEDED, user.getId(), user.getRole().name(),
                 "app_user", user.getId(), ip);
         return new LoginOutcome.SessionIssued(user, session);
     }

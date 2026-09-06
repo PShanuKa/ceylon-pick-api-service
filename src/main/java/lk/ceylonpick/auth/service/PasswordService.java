@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import lk.ceylonpick.auth.AuthProperties;
 import lk.ceylonpick.auth.domain.AppUser;
-import lk.ceylonpick.auth.domain.AuditLogEntry;
+import lk.ceylonpick.shared.audit.AuditService;
 import lk.ceylonpick.auth.domain.PasswordResetToken;
 import lk.ceylonpick.auth.domain.RefreshToken;
 import lk.ceylonpick.auth.repo.AppUserRepository;
@@ -113,7 +113,7 @@ public class PasswordService {
         resetTokens.save(token);
         authUsers.evict(user.getId());
 
-        audit.record(AuditLogEntry.PASSWORD_RESET, user.getId(), user.getRole().name(),
+        audit.record(AuthAudit.PASSWORD_RESET, user.getId(), user.getRole().name(),
                 "app_user", user.getId(), ip);
     }
 
@@ -132,7 +132,7 @@ public class PasswordService {
         users.save(user);
         authUsers.evict(userId);
 
-        audit.record(AuditLogEntry.PASSWORD_CHANGED, userId, user.getRole().name(),
+        audit.record(AuthAudit.PASSWORD_CHANGED, userId, user.getRole().name(),
                 "app_user", userId, ip);
     }
 }

@@ -191,7 +191,7 @@ public class AuthController {
     @GetMapping("/me")
     public ApiResponse<AuthResponses.Me> me(@AuthenticationPrincipal AuthUser principal) {
         return ApiResponse.ok(new AuthResponses.Me(principal.userId(), principal.role(),
-                principal.adminRole(), principal.status(), principal.vendorId(), principal.creatorId()));
+                principal.adminRole(), principal.status()));
     }
 
     // ------------------------------------------------------------ helpers

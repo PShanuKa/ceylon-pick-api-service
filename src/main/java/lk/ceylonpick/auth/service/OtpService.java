@@ -8,7 +8,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import lk.ceylonpick.auth.AuthProperties;
-import lk.ceylonpick.auth.domain.AuditLogEntry;
+import lk.ceylonpick.shared.audit.AuditService;
 import lk.ceylonpick.auth.domain.OtpChallenge;
 import lk.ceylonpick.auth.repo.OtpChallengeRepository;
 import lk.ceylonpick.shared.web.ApiException;
@@ -78,7 +78,7 @@ public class OtpService {
         challenges.save(challenge);
 
         sender.send(challenge, code);
-        audit.record(AuditLogEntry.OTP_ISSUED, userId, null, "otp_challenge", challenge.getId(), null);
+        audit.record(AuthAudit.OTP_ISSUED, userId, null, "otp_challenge", challenge.getId(), null);
         return new IssuedOtp(challenge, code);
     }
 
@@ -135,7 +135,7 @@ public class OtpService {
         if (!Hashes.matches(challenge.getCodeHash(), Hashes.sha256(challenge.getSalt(), code))) {
             challenge.setAttempts(challenge.getAttempts() + 1);
             challenges.saveAndFlush(challenge);
-            audit.record(AuditLogEntry.OTP_FAILED, challenge.getUserId(), null,
+            audit.record(AuthAudit.OTP_FAILED, challenge.getUserId(), null,
                     "otp_challenge", challenge.getId(), null);
             throw ApiException.badRequest("OTP_INVALID", "That code is not correct");
         }

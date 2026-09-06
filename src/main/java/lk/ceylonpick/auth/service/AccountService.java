@@ -11,7 +11,7 @@ import org.springframework.transaction.annotation.Transactional;
 import lk.ceylonpick.auth.AuthProperties;
 import lk.ceylonpick.auth.api.UserStatus;
 import lk.ceylonpick.auth.domain.AppUser;
-import lk.ceylonpick.auth.domain.AuditLogEntry;
+import lk.ceylonpick.shared.audit.AuditService;
 import lk.ceylonpick.auth.domain.RefreshToken;
 import lk.ceylonpick.auth.repo.AppUserRepository;
 import lk.ceylonpick.shared.web.ApiException;
@@ -71,7 +71,7 @@ public class AccountService {
         if (attempts >= properties.lockout().maxFailedAttempts()) {
             user.setLockedUntil(now.plus(properties.lockout().duration()));
             user.setFailedLogins(0);
-            audit.record(AuditLogEntry.ACCOUNT_LOCKED, user.getId(), user.getRole().name(),
+            audit.record(AuthAudit.ACCOUNT_LOCKED, user.getId(), user.getRole().name(),
                     "app_user", user.getId(), ip);
         }
         users.save(user);
@@ -124,7 +124,7 @@ public class AccountService {
         users.save(user);
         authUsers.evict(userId);
 
-        audit.record(AuditLogEntry.USER_STATUS_CHANGED, actorId, actorRole,
+        audit.record(AuthAudit.USER_STATUS_CHANGED, actorId, actorRole,
                 "app_user", userId, ip,
                 Map.of("status", previous.name()),
                 Map.of("status", newStatus.name()),
@@ -139,6 +139,6 @@ public class AccountService {
                 .orElseThrow(() -> ApiException.badRequest("UNKNOWN_USER", "No such user"));
         tokens.invalidateAllSessions(user, RefreshToken.REASON_SESSIONS_INVALIDATED);
         authUsers.evict(userId);
-        audit.record(AuditLogEntry.SESSIONS_INVALIDATED, actorId, actorRole, "app_user", userId, ip);
+        audit.record(AuthAudit.SESSIONS_INVALIDATED, actorId, actorRole, "app_user", userId, ip);
     }
 }

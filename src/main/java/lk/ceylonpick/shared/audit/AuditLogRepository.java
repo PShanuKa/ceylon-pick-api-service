@@ -1,8 +1,6 @@
-package lk.ceylonpick.auth.repo;
+package lk.ceylonpick.shared.audit;
 
 import org.springframework.data.jpa.repository.JpaRepository;
-
-import lk.ceylonpick.auth.domain.AuditLogEntry;
 
 public interface AuditLogRepository extends JpaRepository<AuditLogEntry, Long> {
 }

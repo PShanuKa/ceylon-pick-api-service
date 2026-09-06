@@ -13,7 +13,7 @@ import lk.ceylonpick.auth.api.AdminRole;
 import lk.ceylonpick.auth.api.Role;
 import lk.ceylonpick.auth.domain.AdminProfile;
 import lk.ceylonpick.auth.domain.AppUser;
-import lk.ceylonpick.auth.domain.AuditLogEntry;
+import lk.ceylonpick.shared.audit.AuditService;
 import lk.ceylonpick.auth.repo.AdminProfileRepository;
 import lk.ceylonpick.auth.repo.AppUserRepository;
 import lk.ceylonpick.shared.web.ApiException;
@@ -93,7 +93,7 @@ public class AdminUserService {
         profile.setCreatedAt(now);
         adminProfiles.save(profile);
 
-        audit.record(AuditLogEntry.ADMIN_CREATED, actorId, AdminRole.OWNER.name(),
+        audit.record(AuthAudit.ADMIN_CREATED, actorId, AdminRole.OWNER.name(),
                 "admin_profile", user.getId(), ip,
                 null, Map.of("adminRole", adminRole.name(), "email", email), null);
         return profile;
@@ -116,7 +116,7 @@ public class AdminUserService {
         adminProfiles.save(profile);
         authUsers.evict(userId);
 
-        audit.record(AuditLogEntry.ADMIN_ROLE_CHANGED, actorId, AdminRole.OWNER.name(),
+        audit.record(AuthAudit.ADMIN_ROLE_CHANGED, actorId, AdminRole.OWNER.name(),
                 "admin_profile", userId, ip,
                 Map.of("adminRole", previous.name()),
                 Map.of("adminRole", newRole.name()),
