@@ -19,6 +19,8 @@ public interface CatalogApi {
             String productId,
             String vendorId,
             String categoryId,
+            /** BR-05's per-category COD caps are keyed by slug, not id. */
+            String categorySlug,
             String titleSnapshot,
             BigDecimal unitPrice,
             BigDecimal creatorPct,

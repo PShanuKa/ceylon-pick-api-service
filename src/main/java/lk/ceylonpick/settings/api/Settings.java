@@ -28,6 +28,17 @@ public interface Settings {
 
     CommissionBounds creatorCommissionBounds();
 
+    /**
+     * BR-05: "Max COD order total LKR 5,000; per-category caps (Beauty 3,000)."
+     *
+     * <p>A cart touching several categories takes the lowest cap that applies —
+     * one beauty item drags the whole order down to 3,000, which is the reading
+     * that keeps the tighter limit meaningful.
+     *
+     * @param categorySlugs the categories present in the cart
+     */
+    BigDecimal codCapFor(java.util.Set<String> categorySlugs);
+
     VendorCaps vendorCaps();
 
     boolean killSwitchOn();

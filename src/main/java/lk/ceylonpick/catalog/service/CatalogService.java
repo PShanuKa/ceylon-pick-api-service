@@ -126,6 +126,8 @@ public class CatalogService implements CatalogApi {
                         product.getId(),
                         product.getVendorId(),
                         product.getCategoryId(),
+                        categories.findById(product.getCategoryId())
+                                .map(Category::getSlug).orElse(null),
                         bestTitle(product),
                         variant.effectivePrice(product.getBasePrice()),
                         product.getCreatorPct(),

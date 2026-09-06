@@ -68,6 +68,19 @@ public class SettingsService implements Settings {
     }
 
     @Override
+    public BigDecimal codCapFor(java.util.Set<String> categorySlugs) {
+        BigDecimal cap = decimal(SettingKeys.COD_CAP_GLOBAL);
+        JsonNode byCategory = tree(SettingKeys.COD_CAP_BY_CATEGORY);
+        for (String slug : categorySlugs) {
+            JsonNode override = byCategory.get(slug);
+            if (override != null && !override.isNull()) {
+                cap = cap.min(override.decimalValue());
+            }
+        }
+        return cap;
+    }
+
+    @Override
     public boolean killSwitchOn() {
         return flag(SettingKeys.KILL_SWITCH_NEW_ORDERS);
     }
