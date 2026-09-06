@@ -15,12 +15,13 @@ those documents disagree, they win.
 |---|---|---|---|---|
 | 1 | Shared kernel + auth | `shared`, `auth` | **Done** | Deploys; health endpoint green; login works |
 | 2 | Settings, vendors, catalog | `settings`, `vendors`, `catalog` | **Done** (bar R2 upload) | 20 real products listed with photos |
-| 3 | Orders + notifications adapter | `orders`, `notifications` | Not started | End-to-end COD order confirmed by OTP on a real phone |
-| 4 | Payments | `payments` | Not started | Sandbox prepaid order reaches CONFIRMED via IPN only |
+| 3 | Orders + notifications adapter | `orders`, `notifications` | **In progress** — schema + kernel done | COD order confirmed by OTP end to end against the stub sender |
+| 4 | Payments | `payments` | Not started | Prepaid order reaches CONFIRMED only via a signature-verified IPN (synthetic) |
 | 5 | Ledger + payouts | `ledger` | Not started | Fig. 6 reproduces exactly; bank-vs-held check passes |
 | 6 | Creators + attribution | `creators` | Not started | Attributed order settles into `CREATOR_PAYABLE` |
-| 7 | Shipment, courier, disputes | `orders` (shipping), adapters | Not started | Full `PLACED → SETTLED` and `PLACED → RTO` with a real courier |
+| 7 | Shipment, courier, disputes | `orders` (shipping), adapters | Not started | Full `PLACED → SETTLED` and `PLACED → RTO` through the manual adapter |
 | 8 | Hardening | — | Not started | Go-live checklist signed; 20 vendors, 20 creators onboarded |
+| 9 | Live integrations | adapters | **Deferred to last** | Real phone, real card, real courier, real bucket — see below |
 
 The order is Architecture §12's, and the reason for it is stated there: *"Money-critical paths are
 built first and tested first. Front-end polish comes last."* Do not reorder to do the easy modules
@@ -29,6 +30,47 @@ is built on top of it.
 
 Hard rule from the Project Plan §11: *"if v1 is not live by week 8, switch to WooCommerce and ship
 anyway."*
+
+---
+
+## Deferred integrations — a deliberate decision
+
+PayHere, the SMS/WhatsApp gateway, SMTP and R2 are **left until last**. Nothing about the API
+design waits on them: each one sits behind an interface with a stand-in, so the modules that use
+them can be written, tested and reviewed now, and the real adapter is dropped in later without the
+callers changing.
+
+| Third party | Stands in for now | What is genuinely deferred |
+|---|---|---|
+| SMS / WhatsApp (IF-04) | `LoggingOtpSender` logs the code; dev also returns it in the response | Delivery, and the "within 30 s on a real phone" measurement |
+| SMTP | Reset and verification tokens are logged | Delivery only; the token flows are complete and tested |
+| PayHere (IF-02) | The IPN endpoint verifies a locally computed `md5sig`, so a synthetic IPN exercises the whole path | Sandbox keys, a public HTTPS callback URL, and the real settlement report |
+| Cloudflare R2 | The API accepts an `object_key`; the browser is meant to upload directly anyway | Issuing pre-signed URLs, which is a thin wrapper |
+| Courier | The manual adapter, which the go-live checklist requires regardless: *"Admin can manually move any order between allowed states with a reason (courier APIs will fail)"* | A status feed or webhook, once a courier is chosen (SRS §10 open issue) |
+
+What this costs: the acceptance criteria that name a real device or a real payment — FR-NOT-01's
+30-second delivery, FR-PAY-01's live checkout, AT-02's sandbox IPN — cannot be signed off until
+module 9. Everything else in those requirements can.
+
+What it must not cost: the stand-ins are not allowed to weaken a rule. The OTP still expires in
+10 minutes with 3 attempts, the IPN is still signature-checked and idempotent, and the browser
+return URL still never confirms an order. A stub that skips a guard would make the tests lie.
+
+## Front end — separate projects
+
+The web storefront and the admin panel are **their own repositories**, not modules here. This
+service stays a pure JSON API behind `/api/v1`, which is what makes that split work:
+
+- `ApiResponse` is one envelope for every endpoint, so a client has one place to check success.
+- Errors carry a stable `code`; the message is already translated for the caller.
+- Session is httpOnly cookies plus CSRF, so both front ends authenticate the same way — they must
+  send the `XSRF-TOKEN` cookie back in an `X-XSRF-TOKEN` header, and use `credentials: include`.
+- Paths are already grouped by audience: `/api/v1/public/**`, `/api/v1/vendor/**`,
+  `/api/v1/creator/**`, `/api/v1/admin/**`.
+
+CORS is on with defaults today, which is fine while everything is same-origin behind Caddy. Before
+either front end runs on its own origin, set the allowed origins explicitly — with credentialed
+cookie auth, a wildcard will not work and must not be attempted.
 
 ---
 
@@ -43,15 +85,18 @@ assertions that vendor A cannot read vendor B's data and that admin login requir
 
 Still outstanding in this area:
 
-- [ ] `Money` — the shared kernel is specified to own it (BigDecimal, LKR, scale 2, `HALF_EVEN`).
-      Not written yet; the ledger needs it first.
+- [x] `Money` — BigDecimal, LKR, scale 2, `HALF_EVEN`. `split()` gives the rounding remainder to the
+      last share, which is what keeps a settlement's parts summing exactly to the order total
+      (FR-LED-04); `MoneyTest` checks that across 200 awkward amounts.
 - [x] `audit_log` moved to `shared/audit` — NFR-07 covers settings changes and admin actions, not
       only auth, so every module writes through the same `AuditService`.
-- [ ] `DomainEvent` / `OutboxEntry` / `IdempotencyKey` — also shared-kernel, needed by notifications.
-- [ ] Real SMS/WhatsApp sender behind `OtpSender`; today it logs the code.
-- [ ] A mailer for password-reset and email-verification links; today they are logged.
+- [x] `DomainEvent` / `OutboxEntry` / `OutboxPublisher` / `EventIdempotency` — publishing requires an
+      open transaction (`MANDATORY`), and consumers claim an event by primary-key insert (FR-NOT-04).
+      The dispatcher poller arrives with notifications.
 - [ ] Tamil bundle reviewed by a native speaker (NFR-06 makes it published content).
 - [ ] Testcontainers integration tests — blocked on Docker not running on this machine.
+
+The SMS sender and the mailer are module 9 work; see *Deferred integrations* above.
 
 ---
 
@@ -144,9 +189,10 @@ Terminal: SETTLED, CANCELLED, RTO, REFUNDED.
 - [ ] `order_status_history` written on every transition with from, to, actor, reason (FR-ORD-10)
 - [ ] Cart spanning N vendors becomes N orders (BR-19, FR-ORD-01)
 - [ ] COD hidden with a reason when over the cap or the cart holds a prepaid-only item (FR-ORD-02)
-- [ ] OTP confirmation reusing the existing `otp_challenge` with purpose `ORDER_CONFIRM` — **add the
-      FKs to `"order"(id)` from `otp_challenge.order_id` AND `stock_reservation.order_id` in this
-      migration**; V1 and V2 both left them out because the table did not exist yet
+- [x] `V3__orders.sql`: outbox, processed_event, order, order_item, order_status_history, shipment,
+      dispute, message_template, message_log, marketing_optin, shedlock — and the two deferred FKs
+      from `otp_challenge.order_id` and `stock_reservation.order_id` to `"order"(id)`
+- [ ] OTP confirmation reusing `otp_challenge` with purpose `ORDER_CONFIRM`
 - [ ] Wire `CatalogApi.reserveStock/releaseStock/consumeStock` into the state machine, and schedule
       `StockService.releaseExpired()` under ShedLock
 - [ ] Scheduled jobs under ShedLock: 24 h OTP auto-cancel, 30 min prepaid timeout, hourly settlement
@@ -264,6 +310,19 @@ settles into `CREATOR_PAYABLE`.
       currently a convention, not an enforced one
 
 ---
+
+## 9. Live integrations — last
+
+Done only when the rest works. Each is a single adapter class plus configuration; the interfaces
+and their call sites already exist.
+
+- [ ] SMS/WhatsApp provider behind `OtpSender`, marked `@Primary`. Then measure FR-NOT-01's 30 s.
+- [ ] Mailer for reset and verification links.
+- [ ] PayHere: merchant approval, sandbox then live keys kept separate, and a public HTTPS IPN URL.
+      Then AT-02 and AT-13 against the real sandbox.
+- [ ] R2 pre-signed upload endpoint, and the bucket lifecycle rules.
+- [ ] Courier adapter for whichever partner is chosen; the manual path stays as the fallback.
+- [ ] Confirm BR-22's RTO fee, which the SRS still marks "to confirm".
 
 ## Decisions carried forward
 

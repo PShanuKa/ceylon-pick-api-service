@@ -140,6 +140,23 @@ migration must add it.
 - `UserDetailsServiceAutoConfiguration` moved to `org.springframework.boot.security.autoconfigure`.
 - Testcontainers 2.x renamed the module to `testcontainers-postgresql`.
 
+## Third parties are stubbed on purpose
+
+PayHere, SMS/WhatsApp, SMTP and R2 are deliberately left until last. Each sits behind an interface
+with a stand-in — `OtpSender` logs the code, reset links are logged, the IPN endpoint verifies a
+locally computed signature — so the modules that use them are written and tested now, and the real
+adapter is dropped in without callers changing.
+
+A stand-in must never weaken a rule it stands in for. The OTP still expires in 10 minutes with 3
+attempts; the IPN is still signature-checked and idempotent; the browser return URL still never
+confirms an order. See *Deferred integrations* in `doc/BUILD_PLAN.md`.
+
+The web storefront and admin panel are separate repositories consuming this API. Keep it a pure
+JSON API: one `ApiResponse` envelope, stable error codes, audience-grouped paths
+(`/api/v1/public|vendor|creator|admin/**`). CORS currently runs on defaults, which only holds while
+everything is same-origin behind Caddy — before a front end gets its own origin, set the allowed
+origins explicitly, because credentialed cookie auth cannot use a wildcard.
+
 ## Local development
 
 Profiles are `dev` (default), `uat`, `prod`. uat and prod require `DB_URL`, `DB_USERNAME`,
