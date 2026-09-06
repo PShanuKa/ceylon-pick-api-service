@@ -1,5 +1,7 @@
 package lk.ceylonpick.auth.web;
 
+import java.util.Map;
+
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
@@ -21,6 +23,9 @@ import lk.ceylonpick.auth.service.LoginOutcome;
 import lk.ceylonpick.auth.service.OtpService;
 import lk.ceylonpick.auth.service.PasswordService;
 import lk.ceylonpick.auth.service.RegistrationService;
+import lk.ceylonpick.shared.i18n.MessageResolver;
+import lk.ceylonpick.shared.web.ApiResponse;
+import lk.ceylonpick.shared.web.ClientInfo;
 
 /**
  * The auth surface. The SRS specifies no REST paths at all — the only fixed
@@ -29,7 +34,8 @@ import lk.ceylonpick.auth.service.RegistrationService;
  *
  * <p>Statuses: 200 signed in, 202 second factor required, 401 not signed in,
  * 403 signed in but not entitled (FR-AUTH-03), 423 locked out (FR-AUTH-02),
- * 429 rate limited (FR-NOT-01).
+ * 429 rate limited (FR-NOT-01). Every body is an
+ * {@link ApiResponse}, and every message is resolved in the caller's language.
  */
 @RestController
 @RequestMapping("/api/v1/auth")
@@ -40,183 +46,192 @@ public class AuthController {
     private final PasswordService passwords;
     private final OtpService otp;
     private final AuthCookies cookies;
+    private final MessageResolver messages;
 
     public AuthController(AuthService auth,
                           RegistrationService registration,
                           PasswordService passwords,
                           OtpService otp,
-                          AuthCookies cookies) {
+                          AuthCookies cookies,
+                          MessageResolver messages) {
         this.auth = auth;
         this.registration = registration;
         this.passwords = passwords;
         this.otp = otp;
         this.cookies = cookies;
+        this.messages = messages;
     }
 
     // ------------------------------------------------------------ password
 
     /** FR-AUTH-02. Returns 202 for admins and anyone with 2FA on. */
     @PostMapping("/login")
-    public ResponseEntity<?> login(@Valid @RequestBody AuthRequests.Login body,
-                                   HttpServletRequest request) {
-        LoginOutcome outcome = auth.loginWithPassword(body.email(), body.password(),
-                ClientInfo.userAgent(request), ClientInfo.ip(request));
-        return respond(outcome);
+    public ResponseEntity<ApiResponse<?>> login(@Valid @RequestBody AuthRequests.Login body,
+                                                HttpServletRequest request) {
+        return respond(auth.loginWithPassword(body.email(), body.password(),
+                ClientInfo.userAgent(request), ClientInfo.ip(request)));
     }
 
     @PostMapping("/login/otp")
-    public ResponseEntity<?> completeOtpLogin(@Valid @RequestBody AuthRequests.OtpLogin body,
-                                              HttpServletRequest request) {
-        LoginOutcome outcome = auth.completeOtpLogin(body.challengeId(), body.code(),
-                ClientInfo.userAgent(request), ClientInfo.ip(request));
-        return respond(outcome);
+    public ResponseEntity<ApiResponse<?>> completeOtpLogin(@Valid @RequestBody AuthRequests.OtpLogin body,
+                                                           HttpServletRequest request) {
+        return respond(auth.completeOtpLogin(body.challengeId(), body.code(),
+                ClientInfo.userAgent(request), ClientInfo.ip(request)));
     }
 
     // ------------------------------------------------------------ phone OTP
 
     /** FR-AUTH-01 step one. Always 202, whether or not the number is known. */
     @PostMapping("/otp/request")
-    public ResponseEntity<AuthResponses.OtpRequired> requestOtp(
+    public ResponseEntity<ApiResponse<AuthResponses.OtpRequired>> requestOtp(
             @Valid @RequestBody AuthRequests.PhoneOnly body) {
-        LoginOutcome.OtpRequired issued = auth.requestBuyerOtp(body.phone());
-        return ResponseEntity.accepted().body(toResponse(issued));
+        return ResponseEntity.accepted().body(ApiResponse.ok(toPayload(auth.requestBuyerOtp(body.phone()))));
     }
 
     /** FR-AUTH-01 step two: creates the 30-day buyer session. */
     @PostMapping("/otp/verify")
-    public ResponseEntity<AuthResponses.Session> verifyOtp(
+    public ResponseEntity<ApiResponse<AuthResponses.Session>> verifyOtp(
             @Valid @RequestBody AuthRequests.OtpVerify body, HttpServletRequest request) {
-        LoginOutcome.SessionIssued issued = auth.verifyBuyerOtp(body.challengeId(), body.code(),
-                ClientInfo.userAgent(request), ClientInfo.ip(request));
-        return withSession(issued);
+        return withSession(auth.verifyBuyerOtp(body.challengeId(), body.code(),
+                ClientInfo.userAgent(request), ClientInfo.ip(request)));
     }
 
     /** BR-07: at most 3 resends per request, and still inside the hourly cap. */
     @PostMapping("/otp/resend")
-    public ResponseEntity<AuthResponses.Message> resendOtp(
+    public ResponseEntity<ApiResponse<Map<String, String>>> resendOtp(
             @Valid @RequestBody AuthRequests.ChallengeOnly body) {
         otp.resend(body.challengeId());
-        return ResponseEntity.accepted().body(new AuthResponses.Message("A new code is on its way"));
+        return ResponseEntity.accepted().body(message("message.OTP_SENT"));
     }
 
     // ------------------------------------------------------------ registration
 
     /** Optional customer account. Guest checkout and phone-OTP sign-in are unaffected. */
     @PostMapping("/register")
-    public ResponseEntity<AuthResponses.Message> register(
+    public ResponseEntity<ApiResponse<Map<String, String>>> register(
             @Valid @RequestBody AuthRequests.Register body, HttpServletRequest request) {
         registration.registerCustomer(body.email(), body.password(), body.phone(),
                 body.fullName(), ClientInfo.ip(request));
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new AuthResponses.Message("Account created. Check your email to confirm it."));
+        return ResponseEntity.status(HttpStatus.CREATED).body(message("message.REGISTERED"));
     }
 
     @PostMapping("/email/verify")
-    public ResponseEntity<AuthResponses.Message> verifyEmail(
+    public ResponseEntity<ApiResponse<Map<String, String>>> verifyEmail(
             @Valid @RequestBody AuthRequests.TokenOnly body, HttpServletRequest request) {
         registration.verifyEmail(body.token(), ClientInfo.ip(request));
-        return ResponseEntity.ok(new AuthResponses.Message("Email confirmed"));
+        return ResponseEntity.ok(message("message.EMAIL_CONFIRMED"));
     }
 
     // ------------------------------------------------------------ passwords
 
     /** Always 202, so this cannot be used to discover who has an account. */
     @PostMapping("/password/forgot")
-    public ResponseEntity<AuthResponses.Message> forgotPassword(
+    public ResponseEntity<ApiResponse<Map<String, String>>> forgotPassword(
             @Valid @RequestBody AuthRequests.ForgotPassword body, HttpServletRequest request) {
         passwords.requestReset(body.email(), ClientInfo.ip(request));
-        return ResponseEntity.accepted()
-                .body(new AuthResponses.Message("If that address has an account, a reset link is on its way"));
+        return ResponseEntity.accepted().body(message("message.PASSWORD_RESET_SENT"));
     }
 
     @PostMapping("/password/reset")
-    public ResponseEntity<AuthResponses.Message> resetPassword(
+    public ResponseEntity<ApiResponse<Map<String, String>>> resetPassword(
             @Valid @RequestBody AuthRequests.ResetPassword body, HttpServletRequest request) {
         passwords.reset(body.token(), body.newPassword(), ClientInfo.ip(request));
-        return clearedSession("Password changed. Sign in again.");
+        return clearedSession("message.PASSWORD_CHANGED");
     }
 
     /** Signs the caller out everywhere, including this session. */
     @PostMapping("/password/change")
-    public ResponseEntity<AuthResponses.Message> changePassword(
+    public ResponseEntity<ApiResponse<Map<String, String>>> changePassword(
             @AuthenticationPrincipal AuthUser principal,
             @Valid @RequestBody AuthRequests.ChangePassword body,
             HttpServletRequest request) {
         passwords.change(principal.userId(), body.currentPassword(), body.newPassword(),
                 ClientInfo.ip(request));
-        return clearedSession("Password changed. Sign in again.");
+        return clearedSession("message.PASSWORD_CHANGED");
     }
 
     // ------------------------------------------------------------ step-up (FR-AUTH-04)
 
     @PostMapping("/otp/step-up")
-    public ResponseEntity<AuthResponses.OtpRequired> requestStepUp(
+    public ResponseEntity<ApiResponse<AuthResponses.OtpRequired>> requestStepUp(
             @AuthenticationPrincipal AuthUser principal) {
-        return ResponseEntity.accepted().body(toResponse(auth.requestStepUp(principal.userId())));
+        return ResponseEntity.accepted()
+                .body(ApiResponse.ok(toPayload(auth.requestStepUp(principal.userId()))));
     }
 
     @PostMapping("/otp/step-up/verify")
-    public ResponseEntity<AuthResponses.Message> confirmStepUp(
+    public ResponseEntity<ApiResponse<Map<String, String>>> confirmStepUp(
             @AuthenticationPrincipal AuthUser principal,
             @Valid @RequestBody AuthRequests.OtpVerify body) {
         auth.confirmStepUp(body.challengeId(), body.code(), principal.userId());
-        return ResponseEntity.ok(new AuthResponses.Message("Verified"));
+        return ResponseEntity.ok(message("message.STEP_UP_VERIFIED"));
     }
 
     // ------------------------------------------------------------ session
 
     @PostMapping("/refresh")
-    public ResponseEntity<AuthResponses.Message> refresh(HttpServletRequest request) {
+    public ResponseEntity<ApiResponse<Map<String, String>>> refresh(HttpServletRequest request) {
         IssuedSession session = auth.refresh(cookies.readRefresh(request),
                 ClientInfo.userAgent(request), ClientInfo.ip(request));
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookies.access(session.accessToken(), session.accessTtl()).toString())
                 .header(HttpHeaders.SET_COOKIE, cookies.refresh(session.refreshToken(), session.refreshTtl()).toString())
-                .body(new AuthResponses.Message("Session refreshed"));
+                .body(message("message.SESSION_REFRESHED"));
     }
 
     /** Ends this device's session only. Other devices keep theirs. */
     @PostMapping("/logout")
-    public ResponseEntity<AuthResponses.Message> logout(@AuthenticationPrincipal AuthUser principal,
-                                                        HttpServletRequest request) {
+    public ResponseEntity<ApiResponse<Map<String, String>>> logout(
+            @AuthenticationPrincipal AuthUser principal, HttpServletRequest request) {
         auth.logout(cookies.readRefresh(request),
                 principal == null ? null : principal.userId(), ClientInfo.ip(request));
-        return clearedSession("Signed out");
+        return clearedSession("message.SIGNED_OUT");
     }
 
     @GetMapping("/me")
-    public AuthResponses.Me me(@AuthenticationPrincipal AuthUser principal) {
-        return new AuthResponses.Me(principal.userId(), principal.role(), principal.adminRole(),
-                principal.status(), principal.vendorId(), principal.creatorId());
+    public ApiResponse<AuthResponses.Me> me(@AuthenticationPrincipal AuthUser principal) {
+        return ApiResponse.ok(new AuthResponses.Me(principal.userId(), principal.role(),
+                principal.adminRole(), principal.status(), principal.vendorId(), principal.creatorId()));
     }
 
     // ------------------------------------------------------------ helpers
 
-    private ResponseEntity<?> respond(LoginOutcome outcome) {
+    private ResponseEntity<ApiResponse<?>> respond(LoginOutcome outcome) {
         return switch (outcome) {
-            case LoginOutcome.SessionIssued issued -> withSession(issued);
-            case LoginOutcome.OtpRequired pending -> ResponseEntity.accepted().body(toResponse(pending));
+            case LoginOutcome.SessionIssued issued -> {
+                ResponseEntity<ApiResponse<AuthResponses.Session>> response = withSession(issued);
+                yield ResponseEntity.status(response.getStatusCode())
+                        .headers(response.getHeaders())
+                        .body(response.getBody());
+            }
+            case LoginOutcome.OtpRequired pending ->
+                    ResponseEntity.accepted().body(ApiResponse.ok(toPayload(pending)));
         };
     }
 
-    private ResponseEntity<AuthResponses.Session> withSession(LoginOutcome.SessionIssued issued) {
+    private ResponseEntity<ApiResponse<AuthResponses.Session>> withSession(LoginOutcome.SessionIssued issued) {
         IssuedSession session = issued.session();
         ResponseCookie access = cookies.access(session.accessToken(), session.accessTtl());
         ResponseCookie refresh = cookies.refresh(session.refreshToken(), session.refreshTtl());
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, access.toString())
                 .header(HttpHeaders.SET_COOKIE, refresh.toString())
-                .body(new AuthResponses.Session(issued.user().getId(), issued.user().getRole()));
+                .body(ApiResponse.ok(new AuthResponses.Session(
+                        issued.user().getId(), issued.user().getRole())));
     }
 
-    private ResponseEntity<AuthResponses.Message> clearedSession(String message) {
+    private ResponseEntity<ApiResponse<Map<String, String>>> clearedSession(String messageKey) {
         return ResponseEntity.ok()
                 .header(HttpHeaders.SET_COOKIE, cookies.clearAccess().toString())
                 .header(HttpHeaders.SET_COOKIE, cookies.clearRefresh().toString())
-                .body(new AuthResponses.Message(message));
+                .body(message(messageKey));
     }
 
-    private static AuthResponses.OtpRequired toResponse(LoginOutcome.OtpRequired pending) {
+    private ApiResponse<Map<String, String>> message(String key) {
+        return ApiResponse.message(messages.resolve(key));
+    }
+
+    private static AuthResponses.OtpRequired toPayload(LoginOutcome.OtpRequired pending) {
         return AuthResponses.OtpRequired.of(pending.challengeId(), pending.maskedPhone(), pending.devCode());
     }
 }

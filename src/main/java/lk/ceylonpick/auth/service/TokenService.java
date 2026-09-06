@@ -23,7 +23,7 @@ import lk.ceylonpick.auth.domain.AuditLogEntry;
 import lk.ceylonpick.auth.domain.RefreshToken;
 import lk.ceylonpick.auth.repo.AppUserRepository;
 import lk.ceylonpick.auth.repo.RefreshTokenRepository;
-import lk.ceylonpick.auth.web.AuthException;
+import lk.ceylonpick.shared.web.ApiException;
 import lk.ceylonpick.shared.Hashes;
 import lk.ceylonpick.shared.Ids;
 
@@ -141,11 +141,11 @@ public class TokenService {
     @Transactional
     public IssuedSession rotate(String rawRefresh, String userAgent, String ip) {
         if (rawRefresh == null || rawRefresh.isBlank()) {
-            throw AuthException.unauthorized("NO_SESSION", "No session to refresh");
+            throw ApiException.unauthorized("NO_SESSION", "No session to refresh");
         }
         Instant now = clock.instant();
         RefreshToken presented = refreshTokens.findByTokenHash(Hashes.sha256(rawRefresh))
-                .orElseThrow(() -> AuthException.unauthorized("INVALID_SESSION", "Session is not valid"));
+                .orElseThrow(() -> ApiException.unauthorized("INVALID_SESSION", "Session is not valid"));
 
         if (presented.isRevoked()) {
             // Already rotated or explicitly revoked, yet someone still holds it.
@@ -156,17 +156,17 @@ public class TokenService {
                     "refresh_token", presented.getId(), ip);
             log.warn("Refresh token reuse detected for user {}; family {} revoked",
                     presented.getUserId(), presented.getFamilyId());
-            throw AuthException.unauthorized("SESSION_REVOKED", "Session is no longer valid");
+            throw ApiException.unauthorized("SESSION_REVOKED", "Session is no longer valid");
         }
         if (presented.isExpired(now)) {
-            throw AuthException.unauthorized("SESSION_EXPIRED", "Session has expired");
+            throw ApiException.unauthorized("SESSION_EXPIRED", "Session has expired");
         }
 
         AppUser user = users.findById(presented.getUserId())
-                .orElseThrow(() -> AuthException.unauthorized("INVALID_SESSION", "Session is not valid"));
+                .orElseThrow(() -> ApiException.unauthorized("INVALID_SESSION", "Session is not valid"));
         if (!user.getStatus().canAuthenticate()) {
             revoker.revokeAllForUser(user.getId(), RefreshToken.REASON_SESSIONS_INVALIDATED);
-            throw AuthException.forbidden("ACCOUNT_UNAVAILABLE", "This account is not active");
+            throw ApiException.forbidden("ACCOUNT_UNAVAILABLE", "This account is not active");
         }
 
         IssuedSession next = issue(user, presented.getFamilyId(), userAgent, ip);

@@ -16,7 +16,7 @@ import lk.ceylonpick.auth.domain.PasswordResetToken;
 import lk.ceylonpick.auth.domain.RefreshToken;
 import lk.ceylonpick.auth.repo.AppUserRepository;
 import lk.ceylonpick.auth.repo.PasswordResetTokenRepository;
-import lk.ceylonpick.auth.web.AuthException;
+import lk.ceylonpick.shared.web.ApiException;
 import lk.ceylonpick.shared.Hashes;
 import lk.ceylonpick.shared.Ids;
 
@@ -95,12 +95,12 @@ public class PasswordService {
     public void reset(String rawToken, String newPassword, String ip) {
         Instant now = clock.instant();
         PasswordResetToken token = resetTokens.findByTokenHash(Hashes.sha256(rawToken))
-                .orElseThrow(() -> AuthException.badRequest("INVALID_TOKEN", "That link is not valid"));
+                .orElseThrow(() -> ApiException.badRequest("INVALID_TOKEN", "That link is not valid"));
         if (!token.isUsable(now)) {
-            throw AuthException.badRequest("INVALID_TOKEN", "That link has expired or was already used");
+            throw ApiException.badRequest("INVALID_TOKEN", "That link has expired or was already used");
         }
         AppUser user = users.findById(token.getUserId())
-                .orElseThrow(() -> AuthException.badRequest("INVALID_TOKEN", "That link is not valid"));
+                .orElseThrow(() -> ApiException.badRequest("INVALID_TOKEN", "That link is not valid"));
 
         passwordPolicy.validate(newPassword, user.getEmail());
         user.setPasswordHash(passwordEncoder.encode(newPassword));
@@ -121,9 +121,9 @@ public class PasswordService {
     @Transactional
     public void change(String userId, String currentPassword, String newPassword, String ip) {
         AppUser user = users.findById(userId)
-                .orElseThrow(() -> AuthException.unauthorized("INVALID_SESSION", "Session is not valid"));
+                .orElseThrow(() -> ApiException.unauthorized("INVALID_SESSION", "Session is not valid"));
         if (!user.hasPassword() || !passwordEncoder.matches(currentPassword, user.getPasswordHash())) {
-            throw AuthException.badRequest("INVALID_CREDENTIALS", "Current password is incorrect");
+            throw ApiException.badRequest("INVALID_CREDENTIALS", "Current password is incorrect");
         }
         passwordPolicy.validate(newPassword, user.getEmail());
 

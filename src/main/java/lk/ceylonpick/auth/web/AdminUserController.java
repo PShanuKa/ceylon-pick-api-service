@@ -1,6 +1,7 @@
 package lk.ceylonpick.auth.web;
 
 import java.util.List;
+import java.util.Map;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -22,6 +23,9 @@ import lk.ceylonpick.auth.api.UserStatus;
 import lk.ceylonpick.auth.domain.AdminProfile;
 import lk.ceylonpick.auth.service.AccountService;
 import lk.ceylonpick.auth.service.AdminUserService;
+import lk.ceylonpick.shared.i18n.MessageResolver;
+import lk.ceylonpick.shared.web.ApiResponse;
+import lk.ceylonpick.shared.web.ClientInfo;
 
 /**
  * Admin account management, restricted to {@link AdminRole#OWNER}.
@@ -42,60 +46,64 @@ public class AdminUserController {
 
     private final AdminUserService adminUsers;
     private final AccountService accounts;
+    private final MessageResolver messages;
 
-    public AdminUserController(AdminUserService adminUsers, AccountService accounts) {
+    public AdminUserController(AdminUserService adminUsers, AccountService accounts,
+                               MessageResolver messages) {
         this.adminUsers = adminUsers;
         this.accounts = accounts;
+        this.messages = messages;
     }
 
     @GetMapping
-    public List<AuthResponses.AdminSummary> list() {
-        return adminUsers.list().stream()
+    public ApiResponse<List<AuthResponses.AdminSummary>> list() {
+        return ApiResponse.ok(adminUsers.list().stream()
                 .map(p -> new AuthResponses.AdminSummary(p.getUserId(), p.getFullName(), p.getAdminRole()))
-                .toList();
+                .toList());
     }
 
     @PostMapping
-    public ResponseEntity<AuthResponses.AdminSummary> create(
+    public ResponseEntity<ApiResponse<AuthResponses.AdminSummary>> create(
             @AuthenticationPrincipal AuthUser principal,
             @Valid @RequestBody AuthRequests.CreateAdmin body,
             HttpServletRequest request) {
         AdminRole role = body.adminRole() == null ? AdminRole.MANAGER : body.adminRole();
         AdminProfile created = adminUsers.create(body.email(), body.password(), body.phone(),
                 body.fullName(), role, principal.userId(), ClientInfo.ip(request));
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(new AuthResponses.AdminSummary(created.getUserId(), created.getFullName(),
-                        created.getAdminRole()));
+        return ResponseEntity.status(HttpStatus.CREATED).body(ApiResponse.ok(summary(created)));
     }
 
     @PatchMapping("/{userId}/role")
-    public AuthResponses.AdminSummary changeRole(
+    public ApiResponse<AuthResponses.AdminSummary> changeRole(
             @AuthenticationPrincipal AuthUser principal,
             @PathVariable String userId,
             @Valid @RequestBody AuthRequests.ChangeAdminRole body,
             HttpServletRequest request) {
-        AdminProfile updated = adminUsers.changeRole(userId, body.adminRole(),
-                principal.userId(), body.reason(), ClientInfo.ip(request));
-        return new AuthResponses.AdminSummary(updated.getUserId(), updated.getFullName(),
-                updated.getAdminRole());
+        return ApiResponse.ok(summary(adminUsers.changeRole(userId, body.adminRole(),
+                principal.userId(), body.reason(), ClientInfo.ip(request))));
     }
 
     /** Ends every session for the account and stops it signing in again. */
     @PatchMapping("/{userId}/disable")
-    public AuthResponses.Message disable(@AuthenticationPrincipal AuthUser principal,
-                                         @PathVariable String userId,
-                                         HttpServletRequest request) {
+    public ApiResponse<Map<String, String>> disable(@AuthenticationPrincipal AuthUser principal,
+                                                    @PathVariable String userId,
+                                                    HttpServletRequest request) {
         accounts.changeStatus(userId, UserStatus.DISABLED, principal.userId(),
                 AdminRole.OWNER.name(), "Disabled by owner", ClientInfo.ip(request));
-        return new AuthResponses.Message("Account disabled");
+        return ApiResponse.message(messages.resolve("message.ACCOUNT_DISABLED"));
     }
 
     @PatchMapping("/{userId}/enable")
-    public AuthResponses.Message enable(@AuthenticationPrincipal AuthUser principal,
-                                        @PathVariable String userId,
-                                        HttpServletRequest request) {
+    public ApiResponse<Map<String, String>> enable(@AuthenticationPrincipal AuthUser principal,
+                                                   @PathVariable String userId,
+                                                   HttpServletRequest request) {
         accounts.changeStatus(userId, UserStatus.ACTIVE, principal.userId(),
                 AdminRole.OWNER.name(), "Re-enabled by owner", ClientInfo.ip(request));
-        return new AuthResponses.Message("Account enabled");
+        return ApiResponse.message(messages.resolve("message.ACCOUNT_ENABLED"));
+    }
+
+    private static AuthResponses.AdminSummary summary(AdminProfile profile) {
+        return new AuthResponses.AdminSummary(profile.getUserId(), profile.getFullName(),
+                profile.getAdminRole());
     }
 }

@@ -7,7 +7,8 @@ import lk.ceylonpick.auth.api.Role;
 import lk.ceylonpick.auth.api.UserStatus;
 
 /**
- * Response bodies.
+ * The {@code data} payloads of this module's responses; the envelope around
+ * them is {@link lk.ceylonpick.shared.web.ApiResponse}.
  *
  * <p>No token ever appears in a body — the session lives in httpOnly cookies
  * (NFR-05), so there is nothing here for injected script to read.
@@ -17,13 +18,13 @@ public final class AuthResponses {
     private AuthResponses() {
     }
 
-    /** 200 on a completed sign-in. Call {@code /me} for the full picture. */
+    /** A completed sign-in. Call {@code /me} for the full picture. */
     public record Session(String userId, Role role) {
     }
 
     /**
-     * 202 when a second factor is still needed. {@code devCode} is present only
-     * while {@code ceylonpick.auth.otp.expose-code} is on, which is dev only.
+     * A second factor is still needed. {@code devCode} is present only while
+     * {@code ceylonpick.auth.otp.expose-code} is on, which is dev only.
      */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public record OtpRequired(
@@ -49,8 +50,5 @@ public final class AuthResponses {
     }
 
     public record AdminSummary(String userId, String fullName, AdminRole adminRole) {
-    }
-
-    public record Message(String message) {
     }
 }

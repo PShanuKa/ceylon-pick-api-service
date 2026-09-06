@@ -15,7 +15,7 @@ import lk.ceylonpick.auth.domain.BuyerProfile;
 import lk.ceylonpick.auth.domain.OtpChallenge;
 import lk.ceylonpick.auth.repo.AppUserRepository;
 import lk.ceylonpick.auth.repo.BuyerProfileRepository;
-import lk.ceylonpick.auth.web.AuthException;
+import lk.ceylonpick.shared.web.ApiException;
 import lk.ceylonpick.shared.Ids;
 import lk.ceylonpick.shared.Phones;
 
@@ -77,7 +77,7 @@ public class AuthService {
         // cannot be used to test whether an address is registered.
         if (found.isEmpty() || !found.get().hasPassword()) {
             audit.record(AuditLogEntry.LOGIN_FAILED, null, null, "app_user", null, ip);
-            throw AuthException.invalidCredentials();
+            throw ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect");
         }
         AppUser user = found.get();
         accounts.assertCanAuthenticate(user);
@@ -86,7 +86,7 @@ public class AuthService {
             accounts.recordFailedLogin(user.getId(), ip);
             audit.record(AuditLogEntry.LOGIN_FAILED, user.getId(), user.getRole().name(),
                     "app_user", user.getId(), ip);
-            throw AuthException.invalidCredentials();
+            throw ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect");
         }
 
         if (user.requiresOtpOnLogin()) {
@@ -99,7 +99,7 @@ public class AuthService {
         if (user.getPhone() == null) {
             // Reachable only through bad data: an admin must have a phone or the
             // mandatory second factor cannot be delivered.
-            throw AuthException.forbidden("NO_SECOND_FACTOR_PHONE",
+            throw ApiException.forbidden("NO_SECOND_FACTOR_PHONE",
                     "This account needs a mobile number before it can sign in. Contact an owner.");
         }
         OtpChallenge.Purpose purpose = user.getRole() == Role.ADMIN
@@ -118,13 +118,13 @@ public class AuthService {
         OtpChallenge.Purpose purpose = otp.peek(challengeId).getPurpose();
         if (purpose != OtpChallenge.Purpose.ADMIN_LOGIN && purpose != OtpChallenge.Purpose.LOGIN_2FA) {
             // e.g. an order-confirmation or bank-edit code replayed here.
-            throw AuthException.badRequest("OTP_WRONG_PURPOSE", "This code cannot be used here");
+            throw ApiException.badRequest("OTP_WRONG_PURPOSE", "This code cannot be used here");
         }
         OtpChallenge verified = otp.verify(challengeId, code, purpose);
         otp.consume(verified);
 
         AppUser user = users.findById(verified.getUserId())
-                .orElseThrow(AuthException::invalidCredentials);
+                .orElseThrow(() -> ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect"));
         accounts.assertCanAuthenticate(user);
         return completeLogin(user, userAgent, ip);
     }
@@ -140,11 +140,11 @@ public class AuthService {
     public LoginOutcome.OtpRequired requestBuyerOtp(String rawPhone) {
         String phone = Phones.normalise(rawPhone);
         if (phone == null) {
-            throw AuthException.badRequest("INVALID_PHONE", "Enter a valid Sri Lankan mobile number");
+            throw ApiException.badRequest("INVALID_PHONE", "Enter a valid Sri Lankan mobile number");
         }
         AppUser existing = users.findByPhoneAndRole(phone, Role.BUYER).orElse(null);
         if (existing != null && existing.getStatus() != lk.ceylonpick.auth.api.UserStatus.ACTIVE) {
-            throw AuthException.forbidden("ACCOUNT_UNAVAILABLE", "This account is not active");
+            throw ApiException.forbidden("ACCOUNT_UNAVAILABLE", "This account is not active");
         }
 
         OtpService.IssuedOtp issued = otp.issue(OtpChallenge.Purpose.BUYER_LOGIN, phone,
@@ -200,9 +200,9 @@ public class AuthService {
     @Transactional
     public LoginOutcome.OtpRequired requestStepUp(String userId) {
         AppUser user = users.findById(userId)
-                .orElseThrow(() -> AuthException.unauthorized("INVALID_SESSION", "Session is not valid"));
+                .orElseThrow(() -> ApiException.unauthorized("INVALID_SESSION", "Session is not valid"));
         if (user.getPhone() == null) {
-            throw AuthException.badRequest("NO_PHONE", "Add a mobile number before editing bank details");
+            throw ApiException.badRequest("NO_PHONE", "Add a mobile number before editing bank details");
         }
         OtpService.IssuedOtp issued = otp.issue(OtpChallenge.Purpose.BANK_EDIT, user.getPhone(),
                 user.getId(), null, null);
@@ -216,7 +216,7 @@ public class AuthService {
     public void confirmStepUp(String challengeId, String code, String userId) {
         OtpChallenge verified = otp.verify(challengeId, code, OtpChallenge.Purpose.BANK_EDIT);
         if (!userId.equals(verified.getUserId())) {
-            throw AuthException.forbidden("OTP_WRONG_USER", "This code belongs to another account");
+            throw ApiException.forbidden("OTP_WRONG_USER", "This code belongs to another account");
         }
         // Deliberately not consumed: the edit endpoint checks for a recent
         // confirmation via OtpService.hasFreshStepUp.

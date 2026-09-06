@@ -3,7 +3,7 @@ package lk.ceylonpick.auth.service;
 import org.springframework.stereotype.Component;
 
 import lk.ceylonpick.auth.AuthProperties;
-import lk.ceylonpick.auth.web.AuthException;
+import lk.ceylonpick.shared.web.ApiException;
 
 /** FR-AUTH-02: "password policy 10 chars". */
 @Component
@@ -17,11 +17,14 @@ public class PasswordPolicy {
 
     public void validate(String password, String email) {
         if (password == null || password.length() < minLength) {
-            throw AuthException.badRequest("WEAK_PASSWORD",
-                    "Password must be at least " + minLength + " characters");
+            // The length is passed as an argument so the Sinhala and Tamil
+            // messages carry the real number too.
+            throw ApiException.badRequest("WEAK_PASSWORD",
+                    "Password must be at least " + minLength + " characters", minLength);
         }
         if (email != null && password.equalsIgnoreCase(email)) {
-            throw AuthException.badRequest("WEAK_PASSWORD", "Password must not be your email address");
+            throw ApiException.badRequest("WEAK_PASSWORD_IS_EMAIL",
+                    "Password must not be your email address");
         }
     }
 

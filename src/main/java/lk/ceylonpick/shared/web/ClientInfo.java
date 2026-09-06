@@ -1,14 +1,14 @@
-package lk.ceylonpick.auth.web;
+package lk.ceylonpick.shared.web;
 
 import jakarta.servlet.http.HttpServletRequest;
 
 /**
- * Caller details recorded against sign-ins and sessions.
+ * Caller details recorded against sign-ins, sessions and audit entries.
  *
- * <p>The app sits behind Caddy (Architecture §3 CI/CD), so
- * {@code getRemoteAddr()} is the proxy. {@code X-Forwarded-For} is trusted for
- * that reason — which is safe only while nothing but the reverse proxy can
- * reach the app port. Both values are only ever stored hashed (NFR-06).
+ * <p>The app sits behind Caddy (Architecture §3), so {@code getRemoteAddr()} is
+ * the proxy. {@code X-Forwarded-For} is trusted for that reason — which holds
+ * only while nothing but the reverse proxy can reach the app port. Both values
+ * are stored hashed, never raw (NFR-06).
  */
 public final class ClientInfo {
 

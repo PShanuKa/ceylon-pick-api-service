@@ -19,7 +19,7 @@ import lk.ceylonpick.auth.domain.EmailVerificationToken;
 import lk.ceylonpick.auth.repo.AppUserRepository;
 import lk.ceylonpick.auth.repo.BuyerProfileRepository;
 import lk.ceylonpick.auth.repo.EmailVerificationTokenRepository;
-import lk.ceylonpick.auth.web.AuthException;
+import lk.ceylonpick.shared.web.ApiException;
 import lk.ceylonpick.shared.Hashes;
 import lk.ceylonpick.shared.Ids;
 import lk.ceylonpick.shared.Phones;
@@ -79,10 +79,10 @@ public class RegistrationService {
         String email = AppUser.normaliseEmail(rawEmail);
         String phone = Phones.normalise(rawPhone);
         if (email == null) {
-            throw AuthException.badRequest("INVALID_EMAIL", "Enter a valid email address");
+            throw ApiException.badRequest("INVALID_EMAIL", "Enter a valid email address");
         }
         if (phone == null) {
-            throw AuthException.badRequest("INVALID_PHONE", "Enter a valid Sri Lankan mobile number");
+            throw ApiException.badRequest("INVALID_PHONE", "Enter a valid Sri Lankan mobile number");
         }
         passwordPolicy.validate(password, email);
 
@@ -94,17 +94,17 @@ public class RegistrationService {
             user = byPhone.get();
             if (user.hasPassword()) {
                 // Already an account. Say nothing about it beyond "in use".
-                throw AuthException.conflict("ALREADY_REGISTERED",
+                throw ApiException.conflict("ALREADY_REGISTERED",
                         "An account already exists for these details");
             }
             if (users.existsByEmail(email)) {
-                throw AuthException.conflict("EMAIL_IN_USE", "That email is already in use");
+                throw ApiException.conflict("EMAIL_IN_USE", "That email is already in use");
             }
             user.setEmail(email);
             user.setPasswordHash(passwordEncoder.encode(password));
         } else {
             if (users.existsByEmail(email)) {
-                throw AuthException.conflict("EMAIL_IN_USE", "That email is already in use");
+                throw ApiException.conflict("EMAIL_IN_USE", "That email is already in use");
             }
             user = new AppUser();
             user.setId(Ids.newId());
@@ -151,12 +151,12 @@ public class RegistrationService {
     public void verifyEmail(String rawToken, String ip) {
         Instant now = clock.instant();
         EmailVerificationToken token = verificationTokens.findByTokenHash(Hashes.sha256(rawToken))
-                .orElseThrow(() -> AuthException.badRequest("INVALID_TOKEN", "That link is not valid"));
+                .orElseThrow(() -> ApiException.badRequest("INVALID_TOKEN", "That link is not valid"));
         if (!token.isUsable(now)) {
-            throw AuthException.badRequest("INVALID_TOKEN", "That link has expired or was already used");
+            throw ApiException.badRequest("INVALID_TOKEN", "That link has expired or was already used");
         }
         AppUser user = users.findById(token.getUserId())
-                .orElseThrow(() -> AuthException.badRequest("INVALID_TOKEN", "That link is not valid"));
+                .orElseThrow(() -> ApiException.badRequest("INVALID_TOKEN", "That link is not valid"));
 
         user.setEmailVerifiedAt(now);
         users.save(user);

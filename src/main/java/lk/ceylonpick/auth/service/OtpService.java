@@ -11,7 +11,7 @@ import lk.ceylonpick.auth.AuthProperties;
 import lk.ceylonpick.auth.domain.AuditLogEntry;
 import lk.ceylonpick.auth.domain.OtpChallenge;
 import lk.ceylonpick.auth.repo.OtpChallengeRepository;
-import lk.ceylonpick.auth.web.AuthException;
+import lk.ceylonpick.shared.web.ApiException;
 import lk.ceylonpick.shared.Hashes;
 import lk.ceylonpick.shared.Ids;
 
@@ -58,7 +58,7 @@ public class OtpService {
     public IssuedOtp issue(OtpChallenge.Purpose purpose, String phone, String userId,
                            String orderId, OtpChallenge.Channel channel) {
         Instant now = clock.instant();
-        enforcePerPhoneHourlyCap(phone, now);
+        enforcePerPhoneHourlyCap(phone, purpose, now);
 
         AuthProperties.Otp config = properties.otp();
         String code = Hashes.randomNumericCode(config.length());
@@ -88,12 +88,12 @@ public class OtpService {
         Instant now = clock.instant();
         OtpChallenge challenge = load(challengeId);
         if (challenge.isConfirmed() || challenge.isConsumed()) {
-            throw AuthException.badRequest("OTP_ALREADY_USED", "This code has already been used");
+            throw ApiException.badRequest("OTP_ALREADY_USED", "This code has already been used");
         }
         if (challenge.getResends() >= properties.otp().maxResends()) {
-            throw AuthException.tooManyRequests("OTP_RESEND_LIMIT", "No more resends for this request");
+            throw ApiException.tooManyRequests("OTP_RESEND_LIMIT", "No more resends for this request");
         }
-        enforcePerPhoneHourlyCap(challenge.getPhone(), now);
+        enforcePerPhoneHourlyCap(challenge.getPhone(), challenge.getPurpose(), now);
 
         String code = Hashes.randomNumericCode(properties.otp().length());
         String salt = Hashes.randomToken(16);
@@ -120,16 +120,16 @@ public class OtpService {
         OtpChallenge challenge = load(challengeId);
 
         if (challenge.getPurpose() != expectedPurpose) {
-            throw AuthException.badRequest("OTP_WRONG_PURPOSE", "This code cannot be used here");
+            throw ApiException.badRequest("OTP_WRONG_PURPOSE", "This code cannot be used here");
         }
         if (challenge.isConsumed()) {
-            throw AuthException.badRequest("OTP_ALREADY_USED", "This code has already been used");
+            throw ApiException.badRequest("OTP_ALREADY_USED", "This code has already been used");
         }
         if (challenge.isExpired(now)) {
-            throw AuthException.badRequest("OTP_EXPIRED", "This code has expired. Request a new one.");
+            throw ApiException.badRequest("OTP_EXPIRED", "This code has expired. Request a new one.");
         }
         if (challenge.getAttempts() >= properties.otp().maxAttempts()) {
-            throw AuthException.tooManyRequests("OTP_ATTEMPTS_EXCEEDED", "Too many attempts. Request a new code.");
+            throw ApiException.tooManyRequests("OTP_ATTEMPTS_EXCEEDED", "Too many attempts. Request a new code.");
         }
 
         if (!Hashes.matches(challenge.getCodeHash(), Hashes.sha256(challenge.getSalt(), code))) {
@@ -137,7 +137,7 @@ public class OtpService {
             challenges.saveAndFlush(challenge);
             audit.record(AuditLogEntry.OTP_FAILED, challenge.getUserId(), null,
                     "otp_challenge", challenge.getId(), null);
-            throw AuthException.badRequest("OTP_INVALID", "That code is not correct");
+            throw ApiException.badRequest("OTP_INVALID", "That code is not correct");
         }
 
         challenge.setConfirmedAt(now);
@@ -150,7 +150,7 @@ public class OtpService {
         Instant now = clock.instant();
         if (challenge.getConfirmedAt() == null
                 || challenge.getConfirmedAt().plus(CONFIRMATION_VALIDITY).isBefore(now)) {
-            throw AuthException.badRequest("OTP_NOT_CONFIRMED", "Confirm the code again");
+            throw ApiException.badRequest("OTP_NOT_CONFIRMED", "Confirm the code again");
         }
         challenge.setConsumedAt(now);
         challenges.save(challenge);
@@ -168,16 +168,29 @@ public class OtpService {
         return challenges.hasConfirmedSince(userId, purpose, clock.instant().minus(window));
     }
 
-    private void enforcePerPhoneHourlyCap(String phone, Instant now) {
+    private void enforcePerPhoneHourlyCap(String phone, OtpChallenge.Purpose purpose, Instant now) {
         long recent = challenges.countByPhoneAndCreatedAtAfter(phone, now.minus(Duration.ofHours(1)));
-        if (recent >= properties.otp().perPhonePerHour()) {
-            throw AuthException.tooManyRequests("OTP_RATE_LIMITED",
+        if (recent >= hourlyCapFor(purpose)) {
+            throw ApiException.tooManyRequests("OTP_RATE_LIMITED",
                     "Too many codes requested for this number. Try again in an hour.");
         }
     }
 
+    /**
+     * FR-NOT-01's cap of 3 per phone per hour is written for buyer-facing codes.
+     * Staff sign-in shares the counter but not the ceiling: their second factor
+     * is mandatory (FR-AUTH-02), so the buyer limit would lock an admin out of
+     * the platform for an hour after three ordinary logins.
+     */
+    private int hourlyCapFor(OtpChallenge.Purpose purpose) {
+        return switch (purpose) {
+            case ADMIN_LOGIN, LOGIN_2FA, BANK_EDIT -> properties.otp().perStaffPhonePerHour();
+            case ORDER_CONFIRM, BUYER_LOGIN, PHONE_VERIFY -> properties.otp().perPhonePerHour();
+        };
+    }
+
     private OtpChallenge load(String challengeId) {
         return challenges.findById(challengeId)
-                .orElseThrow(() -> AuthException.badRequest("OTP_UNKNOWN", "That request has expired"));
+                .orElseThrow(() -> ApiException.badRequest("OTP_UNKNOWN", "That request has expired"));
     }
 }

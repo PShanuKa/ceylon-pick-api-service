@@ -72,7 +72,16 @@ public record AuthProperties(
             @DefaultValue("10m") Duration ttl,
             @DefaultValue("3") int maxAttempts,
             @DefaultValue("3") int maxResends,
+            /** FR-NOT-01 / IF-04, for buyer-facing codes. */
             @DefaultValue("3") int perPhonePerHour,
+            /**
+             * The same cap applied to a staff sign-in would lock an admin out of
+             * the platform for an hour after three logins, because FR-AUTH-02
+             * makes their OTP mandatory. The spec's limit exists to bound SMS
+             * cost and abuse on buyer flows, neither of which applies to a
+             * handful of known staff numbers, so those get their own ceiling.
+             */
+            @DefaultValue("10") int perStaffPhonePerHour,
             @DefaultValue("false") boolean exposeCode) {
     }
 

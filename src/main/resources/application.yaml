@@ -73,7 +73,8 @@ ceylonpick:
       ttl: 10m                    # BR-07
       max-attempts: 3             # BR-07
       max-resends: 3              # BR-07
-      per-phone-per-hour: 3       # FR-NOT-01 / IF-04
+      per-phone-per-hour: 3       # FR-NOT-01 / IF-04, buyer-facing codes
+      per-staff-phone-per-hour: 10  # staff sign-in; see AuthProperties.Otp
       # Echo the code in the API response instead of sending it. Never in uat/prod.
       expose-code: false
     reset:

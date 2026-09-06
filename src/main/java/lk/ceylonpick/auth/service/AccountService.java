@@ -14,7 +14,7 @@ import lk.ceylonpick.auth.domain.AppUser;
 import lk.ceylonpick.auth.domain.AuditLogEntry;
 import lk.ceylonpick.auth.domain.RefreshToken;
 import lk.ceylonpick.auth.repo.AppUserRepository;
-import lk.ceylonpick.auth.web.AuthException;
+import lk.ceylonpick.shared.web.ApiException;
 
 /**
  * Owns the failed-login lockout (FR-AUTH-02) and every change to a user's
@@ -91,13 +91,13 @@ public class AccountService {
     /** Throws if this account cannot sign in right now, without saying which reason. */
     public void assertCanAuthenticate(AppUser user) {
         if (user.getStatus() == UserStatus.DISABLED) {
-            throw AuthException.forbidden("ACCOUNT_UNAVAILABLE", "This account is not active");
+            throw ApiException.forbidden("ACCOUNT_UNAVAILABLE", "This account is not active");
         }
         if (user.getStatus() == UserStatus.LOCKED) {
-            throw AuthException.locked("This account is locked. Contact support.");
+            throw ApiException.locked("ACCOUNT_LOCKED", "This account is locked. Contact support.");
         }
         if (user.isTemporarilyLocked(clock.instant())) {
-            throw AuthException.locked("Too many failed attempts. Try again later.");
+            throw ApiException.locked("ACCOUNT_LOCKED", "Too many failed attempts. Try again later.");
         }
     }
 
@@ -109,7 +109,7 @@ public class AccountService {
     public AppUser changeStatus(String userId, UserStatus newStatus, String actorId,
                                 String actorRole, String reason, String ip) {
         AppUser user = users.findById(userId)
-                .orElseThrow(() -> AuthException.badRequest("UNKNOWN_USER", "No such user"));
+                .orElseThrow(() -> ApiException.badRequest("UNKNOWN_USER", "No such user"));
         UserStatus previous = user.getStatus();
         if (previous == newStatus) {
             return user;
@@ -136,7 +136,7 @@ public class AccountService {
     @Transactional
     public void invalidateAllSessions(String userId, String actorId, String actorRole, String ip) {
         AppUser user = users.findById(userId)
-                .orElseThrow(() -> AuthException.badRequest("UNKNOWN_USER", "No such user"));
+                .orElseThrow(() -> ApiException.badRequest("UNKNOWN_USER", "No such user"));
         tokens.invalidateAllSessions(user, RefreshToken.REASON_SESSIONS_INVALIDATED);
         authUsers.evict(userId);
         audit.record(AuditLogEntry.SESSIONS_INVALIDATED, actorId, actorRole, "app_user", userId, ip);

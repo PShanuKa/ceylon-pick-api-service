@@ -16,7 +16,7 @@ import lk.ceylonpick.auth.domain.AppUser;
 import lk.ceylonpick.auth.domain.AuditLogEntry;
 import lk.ceylonpick.auth.repo.AdminProfileRepository;
 import lk.ceylonpick.auth.repo.AppUserRepository;
-import lk.ceylonpick.auth.web.AuthException;
+import lk.ceylonpick.shared.web.ApiException;
 import lk.ceylonpick.shared.Ids;
 import lk.ceylonpick.shared.Phones;
 
@@ -62,14 +62,14 @@ public class AdminUserService {
         String email = AppUser.normaliseEmail(rawEmail);
         String phone = Phones.normalise(rawPhone);
         if (email == null) {
-            throw AuthException.badRequest("INVALID_EMAIL", "Enter a valid email address");
+            throw ApiException.badRequest("INVALID_EMAIL", "Enter a valid email address");
         }
         if (phone == null) {
-            throw AuthException.badRequest("INVALID_PHONE",
+            throw ApiException.badRequest("INVALID_PHONE",
                     "An admin needs a valid Sri Lankan mobile number for the mandatory OTP");
         }
         if (users.existsByEmail(email)) {
-            throw AuthException.conflict("EMAIL_IN_USE", "That email is already in use");
+            throw ApiException.conflict("EMAIL_IN_USE", "That email is already in use");
         }
         passwordPolicy.validate(password, email);
 
@@ -103,13 +103,13 @@ public class AdminUserService {
     public AdminProfile changeRole(String userId, AdminRole newRole, String actorId,
                                    String reason, String ip) {
         AdminProfile profile = adminProfiles.findById(userId)
-                .orElseThrow(() -> AuthException.badRequest("UNKNOWN_ADMIN", "No such admin"));
+                .orElseThrow(() -> ApiException.badRequest("UNKNOWN_ADMIN", "No such admin"));
         AdminRole previous = profile.getAdminRole();
         if (previous == newRole) {
             return profile;
         }
         if (previous == AdminRole.OWNER && adminProfiles.countByAdminRole(AdminRole.OWNER) <= 1) {
-            throw AuthException.conflict("LAST_OWNER",
+            throw ApiException.conflict("LAST_OWNER",
                     "This is the only owner. Promote another admin first.");
         }
         profile.setAdminRole(newRole);

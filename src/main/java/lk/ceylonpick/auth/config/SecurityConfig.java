@@ -11,15 +11,17 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.AccessDeniedHandler;
-import org.springframework.security.web.AuthenticationEntryPoint;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 
-import lk.ceylonpick.auth.web.ApiError;
+import lk.ceylonpick.shared.i18n.MessageResolver;
+import lk.ceylonpick.shared.web.ApiError;
+import lk.ceylonpick.shared.web.ApiResponse;
 import tools.jackson.databind.ObjectMapper;
 
 /**
@@ -67,7 +69,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
                                                    JwtCookieAuthenticationFilter jwtFilter,
-                                                   ObjectMapper objectMapper) throws Exception {
+                                                   ObjectMapper objectMapper,
+                                                   MessageResolver messages) throws Exception {
         CsrfTokenRequestAttributeHandler csrfHandler = new CsrfTokenRequestAttributeHandler();
 
         http
@@ -91,30 +94,32 @@ public class SecurityConfig {
                         .requestMatchers("/webhooks/**").permitAll()
                         .requestMatchers("/api/v1/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
+                // These fire inside the filter chain, before any controller advice
+                // could see them, so they build the envelope themselves.
                 .exceptionHandling(ex -> ex
-                        .authenticationEntryPoint(entryPoint(objectMapper))
-                        .accessDeniedHandler(accessDeniedHandler(objectMapper)))
+                        .authenticationEntryPoint(entryPoint(objectMapper, messages))
+                        .accessDeniedHandler(accessDeniedHandler(objectMapper, messages)))
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
 
-    /** Not signed in: 401 with the same JSON envelope the controllers use. */
-    private AuthenticationEntryPoint entryPoint(ObjectMapper mapper) {
-        return (request, response, authException) ->
-                write(mapper, response, 401, ApiError.of("UNAUTHENTICATED", "Sign in to continue"));
+    /** Not signed in: 401. */
+    private AuthenticationEntryPoint entryPoint(ObjectMapper mapper, MessageResolver messages) {
+        return (request, response, authException) -> write(mapper, response, 401,
+                "UNAUTHENTICATED", messages.forErrorCode("UNAUTHENTICATED", "Sign in to continue"));
     }
 
     /** Signed in but not entitled: 403 (FR-AUTH-03). */
-    private AccessDeniedHandler accessDeniedHandler(ObjectMapper mapper) {
-        return (request, response, deniedException) ->
-                write(mapper, response, 403, ApiError.of("FORBIDDEN", "You do not have access to this"));
+    private AccessDeniedHandler accessDeniedHandler(ObjectMapper mapper, MessageResolver messages) {
+        return (request, response, deniedException) -> write(mapper, response, 403,
+                "FORBIDDEN", messages.forErrorCode("FORBIDDEN", "You do not have access to this"));
     }
 
     private static void write(ObjectMapper mapper, jakarta.servlet.http.HttpServletResponse response,
-                              int status, ApiError body) throws java.io.IOException {
+                              int status, String code, String message) throws java.io.IOException {
         response.setStatus(status);
         response.setContentType(MediaType.APPLICATION_JSON_VALUE);
-        mapper.writeValue(response.getOutputStream(), body);
+        mapper.writeValue(response.getOutputStream(), ApiResponse.failed(ApiError.of(code, message)));
     }
 }
