@@ -35,6 +35,10 @@ When a decision looks arbitrary, the reason is almost always in there; check bef
 is deliberately not in `db/migration`. Each module's migration takes the tables it owns from that
 file, keeping the column names and types so later migrations line up.
 
+`doc/BUILD_PLAN.md` is the living counterpart: which modules exist, what each one owns, the
+requirements and acceptance tests it has to satisfy, and what is left. **Read it before starting a
+module, and update its status table and checklists when work lands.**
+
 ## Architecture
 
 Architecture §4 mandates the layout: each module is a top-level package `lk.ceylonpick.<module>`
