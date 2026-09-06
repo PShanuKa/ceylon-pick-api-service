@@ -14,7 +14,7 @@ those documents disagree, they win.
 | # | Module | Package | Status | Exit criterion (Architecture §12) |
 |---|---|---|---|---|
 | 1 | Shared kernel + auth | `shared`, `auth` | **Done** | Deploys; health endpoint green; login works |
-| 2 | Catalog + vendors | `catalog`, `vendors` | Not started | 20 real products listed with photos |
+| 2 | Settings, vendors, catalog | `settings`, `vendors`, `catalog` | **Done** (bar R2 upload) | 20 real products listed with photos |
 | 3 | Orders + notifications adapter | `orders`, `notifications` | Not started | End-to-end COD order confirmed by OTP on a real phone |
 | 4 | Payments | `payments` | Not started | Sandbox prepaid order reaches CONFIRMED via IPN only |
 | 5 | Ledger + payouts | `ledger` | Not started | Fig. 6 reproduces exactly; bank-vs-held check passes |
@@ -45,19 +45,21 @@ Still outstanding in this area:
 
 - [ ] `Money` — the shared kernel is specified to own it (BigDecimal, LKR, scale 2, `HALF_EVEN`).
       Not written yet; the ledger needs it first.
+- [x] `audit_log` moved to `shared/audit` — NFR-07 covers settings changes and admin actions, not
+      only auth, so every module writes through the same `AuditService`.
 - [ ] `DomainEvent` / `OutboxEntry` / `IdempotencyKey` — also shared-kernel, needed by notifications.
 - [ ] Real SMS/WhatsApp sender behind `OtpSender`; today it logs the code.
 - [ ] A mailer for password-reset and email-verification links; today they are logged.
 - [ ] Tamil bundle reviewed by a native speaker (NFR-06 makes it published content).
 - [ ] Testcontainers integration tests — blocked on Docker not running on this machine.
-- [ ] `AuthUser.vendorId` / `creatorId` stay null until modules 2 and 6 create those profiles.
 
 ---
 
-## 2. Catalog + vendors
+## 2. Settings, vendors and catalog — **done** (bar R2 upload)
 
-**Owns** — from `doc/version 1/V1__init.sql` §2 and §3: `vendor`, `vendor_verification`, `category`,
-`product`, `product_image`, `product_variant`, `stock_reservation`, `shipping_fee`.
+**Owns** — from `doc/version 1/V1__init.sql` §1, §2, §3 and §10: `setting`, `vendor`,
+`vendor_verification`, `category`, `product`, `product_image`, `product_variant`,
+`stock_reservation`, `shipping_fee`. Applied as `V2__catalog_vendors.sql`.
 
 **Public API** (Architecture §4):
 `catalog`: `getProduct(slug)`, `searchProducts(q, category)`, `reserveStock(variantId, qty)`, `releaseStock()`
@@ -69,19 +71,30 @@ Still outstanding in this area:
 vendors and 15 SKUs each; BR-21 new or changed products need admin moderation before going live;
 BR-23 three vendor strikes trigger review.
 
-- [ ] `vendor` + `vendor_verification`, hanging off `app_user(id)` exactly as `admin_profile` does
-- [ ] Vendor application (public) → admin verification queue → VERIFIED (FR-VEN-01/02).
-      *"Products of unverified vendors are never publicly visible."*
-- [ ] Product/variant CRUD with the moderation gate; a product stays DRAFT until approved
-- [ ] Stock reservation with TTL: 15 min prepaid, 24 h COD (FR-CAT-04). *"Two concurrent orders for
-      the last unit: exactly one succeeds"* — needs row-level locking, not read-then-write
-- [ ] SKU cap enforced with an explanatory message, not a bare 400 (FR-CAT-07)
-- [ ] Vendor suspension hides products within 10 min (FR-VEN-09) — **must evict the auth cache**,
-      see `AccountService`
-- [ ] R2 pre-signed image upload
+- [x] `setting` table and a cached, typed `Settings` API — BR-02 and BR-20 are configurable values
+      with an audit trail (SRS §3), not constants
+- [x] `vendor` + `vendor_verification`, hanging off `app_user(id)` as `admin_profile` does
+- [x] Vendor application (public, no account) → admin queue → three checks → VERIFIED (FR-VEN-01/02).
+      Verifying is refused with 409 until documents, sample and call are all recorded, and is where
+      the vendor's login is first provisioned
+- [x] Product/variant CRUD with the moderation gate. A vendor can only push towards moderation;
+      LIVE is reachable only through an admin approval, and editing a LIVE product sends it back
+- [x] Stock reservation with TTL (FR-CAT-04), proven under 24 concurrent buyers by
+      `StockServiceConcurrencyTest`
+- [x] SKU cap with an explanatory message (FR-CAT-07), read from settings
+- [x] Vendor suspension hides products immediately (FR-VEN-09)
+- [ ] R2 pre-signed image upload — the API takes an object key today; no credentials to wire the
+      signer against yet
 
-Note: `AuthUser.vendorId` gets populated here, and `AuthUserService.load` must start reading it —
-that is what makes FR-AUTH-03's per-vendor ownership checks possible.
+Two notes in the original plan turned out to be wrong, and are corrected here:
+
+- **`AuthUser` does not carry `vendorId`.** Populating it would mean auth reading the vendors
+  table while vendors already depends on auth — a cycle. Each module resolves its own profile from
+  `userId`; `VendorApi.requireOwnVendor` is where FR-AUTH-03 ownership is actually answered.
+- **Vendor suspension does not evict the auth cache**, because it changes `vendor.status`, not
+  `app_user.status`. FR-VEN-09 pauses new orders "while existing orders complete", so the login
+  must keep working. Visibility comes from catalog filtering on `VendorApi.sellableVendorIds()`,
+  read live. Creator auto-pause (BR-16) will be the same shape.
 
 ---
 
@@ -132,7 +145,10 @@ Terminal: SETTLED, CANCELLED, RTO, REFUNDED.
 - [ ] Cart spanning N vendors becomes N orders (BR-19, FR-ORD-01)
 - [ ] COD hidden with a reason when over the cap or the cart holds a prepaid-only item (FR-ORD-02)
 - [ ] OTP confirmation reusing the existing `otp_challenge` with purpose `ORDER_CONFIRM` — **add the
-      FK from `otp_challenge.order_id` to `"order"(id)` in this migration**; `V1__auth.sql` left it out
+      FKs to `"order"(id)` from `otp_challenge.order_id` AND `stock_reservation.order_id` in this
+      migration**; V1 and V2 both left them out because the table did not exist yet
+- [ ] Wire `CatalogApi.reserveStock/releaseStock/consumeStock` into the state machine, and schedule
+      `StockService.releaseExpired()` under ShedLock
 - [ ] Scheduled jobs under ShedLock: 24 h OTP auto-cancel, 30 min prepaid timeout, hourly settlement
 - [ ] Tracking by order number **without login** (FR-ORD-12) — a public route, so add it to
       `SecurityConfig`'s allowlist deliberately, not by accident
@@ -262,8 +278,11 @@ detail; the short version:
 - Buyers may hold an optional email and password (a deliberate departure from FR-AUTH-01).
 - Admins are split into OWNER and MANAGER (an extension; SRS §2.2 has one flat admin).
 - Errors go through `ApiException` with a stable code; copy lives in `messages*.properties`.
-- Migrations are per module, numbered in build order. `V1__auth.sql` is applied; module 2 starts at
-  `V2__`.
+- Migrations are per module, numbered in build order. `V1__auth.sql` and `V2__catalog_vendors.sql`
+  are applied; module 3 starts at `V3__`.
+- A module never reads another module's tables. Where catalog needs vendor state it calls
+  `VendorApi.sellableVendorIds()`; that is only reasonable while BR-20 caps vendors at 25, and
+  becomes a read model if the cap lifts.
 
 ## Open items from the spec
 

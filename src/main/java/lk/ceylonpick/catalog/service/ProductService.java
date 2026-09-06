@@ -133,13 +133,13 @@ public class ProductService {
     public Product submitForModeration(String vendorId, String productId, String ip) {
         Product product = requireOwned(vendorId, productId);
         if (product.getTitle() == null || product.getTitle().isEmpty()) {
-            throw ApiException.badRequest("PRODUCT_INCOMPLETE", "A title is required");
+            throw ApiException.badRequest("PRODUCT_TITLE_REQUIRED", "A title is required");
         }
         if (images.countByProductId(productId) == 0) {
-            throw ApiException.badRequest("PRODUCT_INCOMPLETE", "At least one image is required");
+            throw ApiException.badRequest("PRODUCT_IMAGE_REQUIRED", "At least one image is required");
         }
         if (variants.findByProductIdOrderBySku(productId).isEmpty()) {
-            throw ApiException.badRequest("PRODUCT_INCOMPLETE", "At least one variant is required");
+            throw ApiException.badRequest("PRODUCT_VARIANT_REQUIRED", "At least one variant is required");
         }
         product.setStatus(ProductStatus.IN_MODERATION);
         products.save(product);
@@ -173,8 +173,9 @@ public class ProductService {
         requireOwned(vendorId, productId);
         int cap = settings.vendorCaps().maxSkusPerVendor();
         if (variants.countByVendor(vendorId) >= cap) {
+            // Worded to read correctly at any cap, including 1.
             throw ApiException.conflict("SKU_CAP_REACHED",
-                    "Phase 1 allows " + cap + " SKUs per maker. Archive one to add another.", cap);
+                    "This maker has reached the SKU limit of " + cap + ". Archive one to add another.", cap);
         }
         if (draft.sku() == null || draft.sku().isBlank()) {
             throw ApiException.badRequest("INVALID_SKU", "A SKU is required");
