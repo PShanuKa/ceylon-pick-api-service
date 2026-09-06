@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+### Local overrides ###
+application-local.yaml
+application-local.yml
+.env
